@@ -51,7 +51,7 @@ void VulkanManager::startUp()
 
     uint32 gpuCount = 0;
     vkEnumeratePhysicalDevices(instance, &gpuCount, nullptr);
-    if(gpuCount ==0)
+    if(gpuCount == 0)
     {
         throw std::runtime_error("FATAL_ERROR: No GPUs with Vulkan Support.");
     }
@@ -71,7 +71,7 @@ void VulkanManager::startUp()
     vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &deviceMemoryProperties);
 
-    //-------- QUEUES ------------------
+    //-------- QUEUE FAMILIES ------------------
     //queue family properties, used for setting up requested queues upon device creation
     uint32 queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
@@ -82,14 +82,51 @@ void VulkanManager::startUp()
 
     queueFamilyProperties.resize(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice,
-        &queueFamilyCount,
-        queueFamilyProperties.data());
-     
-    
+                                             &queueFamilyCount,
+                                             queueFamilyProperties.data());
+
+    //Select a queue that supports a graphics queue 
+    uint32 graphicsQueueFamilyIndex;
+    for(uint32 i = 0; i < (uint32)(queueFamilyProperties.size()); i++)    
+    {
+       if(queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) 
+       {
+           graphicsQueueFamilyIndex = i;
+           break;
+       }
+    }
+
+    float graphicsQueuePriority = 1.0f;
+
+    //---------- LOGICAL DEVICE AND QUEUES -------------
+    VkDeviceQueueCreateInfo queueInfo{};
+    queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
+    queueInfo.queueCount = 1;
+    queueInfo.pQueuePriorities = &graphicsQueuePriority;
+
+    //change this to enable device features when needed
+    enabledFeatures = {};
+
+    VkDeviceCreateInfo deviceInfo{};
+    deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceInfo.pQueueCreateInfos = &queueInfo;
+    deviceInfo.queueCreateInfoCount = 1;
+    deviceInfo.pEnabledFeatures = &enabledFeatures;
+
+    //create logical device
+    if(vkCreateDevice(physicalDevice, &deviceInfo, nullptr, &device) != VK_SUCCESS)
+    {
+        throw std::runtime_error("FATAL_ERROR: failed to create logical device.");
+    }
+
+    //get handle to the graphics queue 
+    vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &graphicsQueue);
 }
 
 void VulkanManager::shutDown()
 {
+    vkDestroyDevice(device, nullptr);
     vkDestroyInstance(instance, nullptr);
 }
 

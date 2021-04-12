@@ -15,8 +15,12 @@ struct VulkanManager
     VkPhysicalDevice physicalDevice;
     VkPhysicalDeviceProperties deviceProperties;
     VkPhysicalDeviceFeatures deviceFeatures;
+    VkPhysicalDeviceFeatures enabledFeatures;
     VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
 
+    VkDevice device;
+
+    VkQueue graphicsQueue;
     std::vector<VkQueueFamilyProperties> queueFamilyProperties;
 
     void startUp();
