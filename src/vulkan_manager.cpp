@@ -5,7 +5,7 @@ const std::vector<const char*> validationLayers = {
                                               "VK_LAYER_KHRONOS_validation"
                                             };
                                             
-void VulkanManager::startUp()
+void VulkanManager::startUp(GLFWwindow *window)
 {
     //INSTANCE CREATION
     #ifdef DEBUG
@@ -47,6 +47,15 @@ void VulkanManager::startUp()
         throw std::runtime_error("FATAL_ERROR: Could not create Vulkan Instance.");
     }
 
+    //------ SURFACE ---------------
+
+    if(glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
+    {
+        throw std::runtime_error("FATAL_ERROR: Unable to create window surface.");
+    }
+
+
+
     //----- PHYSICAL DEVICE ------------
 
     uint32 gpuCount = 0;
@@ -87,31 +96,63 @@ void VulkanManager::startUp()
 
     //Select a queue that supports a graphics queue 
     uint32 graphicsQueueFamilyIndex;
+    uint32 presentQueueFamilyIndex;
+
+    VkBool32 graphicsSupportFound = false;
+    VkBool32 surfaceSuppportFound = false;
+
     for(uint32 i = 0; i < (uint32)(queueFamilyProperties.size()); i++)    
     {
-       if(queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) 
+       if((queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+          && (graphicsSupportFound == false))
        {
+           graphicsSupportFound = true;
            graphicsQueueFamilyIndex = i;
+       }
+       
+       vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &surfaceSuppportFound);
+       if(surfaceSuppportFound)
+       {
+           presentQueueFamilyIndex = i;
+       }
+
+       if(graphicsSupportFound && surfaceSuppportFound)
+       {
            break;
        }
     }
 
-    float graphicsQueuePriority = 1.0f;
+        
 
     //---------- LOGICAL DEVICE AND QUEUES -------------
+
+    float queuePriority = 1.0f;
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+
     VkDeviceQueueCreateInfo queueInfo{};
     queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
     queueInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
     queueInfo.queueCount = 1;
-    queueInfo.pQueuePriorities = &graphicsQueuePriority;
+    queueInfo.pQueuePriorities = &queuePriority;
+    queueCreateInfos.push_back(queueInfo);
+
+    if(graphicsQueueFamilyIndex != presentQueueFamilyIndex)
+    {
+        queueInfo = {};
+        queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueInfo.queueFamilyIndex = presentQueueFamilyIndex;
+        queueInfo.queueCount = 1;
+        queueInfo.pQueuePriorities = &queuePriority;
+        queueCreateInfos.push_back(queueInfo);
+    }
 
     //change this to enable device features when needed
     enabledFeatures = {};
 
     VkDeviceCreateInfo deviceInfo{};
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    deviceInfo.pQueueCreateInfos = &queueInfo;
-    deviceInfo.queueCreateInfoCount = 1;
+    deviceInfo.queueCreateInfoCount = (uint32)(queueCreateInfos.size());
+    deviceInfo.pQueueCreateInfos = queueCreateInfos.data();
     deviceInfo.pEnabledFeatures = &enabledFeatures;
 
     //create logical device
@@ -120,13 +161,15 @@ void VulkanManager::startUp()
         throw std::runtime_error("FATAL_ERROR: failed to create logical device.");
     }
 
-    //get handle to the graphics queue 
+    //get handle to the graphics  and presentation queues
     vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &graphicsQueue);
+    vkGetDeviceQueue(device, presentQueueFamilyIndex, 0, &presentQueue);
 }
 
 void VulkanManager::shutDown()
 {
     vkDestroyDevice(device, nullptr);
+    vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
 }
 

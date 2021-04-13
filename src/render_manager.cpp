@@ -19,7 +19,7 @@ void RenderManager::startUp()
     window = glfwCreateWindow(1280, 720, "Vulkan window", nullptr, nullptr);
 
     //Vulkan
-    vulkanManager.startUp();
+    vulkanManager.startUp(window);
 }
 
 void RenderManager::shutDown()

@@ -12,6 +12,8 @@ struct VulkanManager
 {
     VkInstance instance;
 
+    VkSurfaceKHR surface;
+     
     VkPhysicalDevice physicalDevice;
     VkPhysicalDeviceProperties deviceProperties;
     VkPhysicalDeviceFeatures deviceFeatures;
@@ -21,9 +23,11 @@ struct VulkanManager
     VkDevice device;
 
     VkQueue graphicsQueue;
+    VkQueue presentQueue;
+
     std::vector<VkQueueFamilyProperties> queueFamilyProperties;
 
-    void startUp();
+    void startUp(GLFWwindow *window);
     void shutDown();
 };
 
