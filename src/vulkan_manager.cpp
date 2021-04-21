@@ -2,8 +2,11 @@
 #include <stdexcept>
 
 const std::vector<const char*> validationLayers = {
-                                              "VK_LAYER_KHRONOS_validation"
-                                            };
+                                                    "VK_LAYER_KHRONOS_validation"
+                                                  };
+const std::vector<const char*> deviceExtensions = {
+                                                    "VK_KHR_swapchain"
+                                                  };
                                             
 void VulkanManager::startUp(GLFWwindow *window)
 {
@@ -53,8 +56,6 @@ void VulkanManager::startUp(GLFWwindow *window)
     {
         throw std::runtime_error("FATAL_ERROR: Unable to create window surface.");
     }
-
-
 
     //----- PHYSICAL DEVICE ------------
 
@@ -122,8 +123,6 @@ void VulkanManager::startUp(GLFWwindow *window)
        }
     }
 
-        
-
     //---------- LOGICAL DEVICE AND QUEUES -------------
 
     float queuePriority = 1.0f;
@@ -154,6 +153,13 @@ void VulkanManager::startUp(GLFWwindow *window)
     deviceInfo.queueCreateInfoCount = (uint32)(queueCreateInfos.size());
     deviceInfo.pQueueCreateInfos = queueCreateInfos.data();
     deviceInfo.pEnabledFeatures = &enabledFeatures;
+    deviceInfo.enabledExtensionCount = (uint32)(deviceExtensions.size());
+    deviceInfo.ppEnabledExtensionNames = deviceExtensions.data();
+    if(enableValidationLayers)
+    {
+        deviceInfo.enabledLayerCount = (uint32)(validationLayers.size());
+        deviceInfo.ppEnabledLayerNames = validationLayers.data();
+    }
 
     //create logical device
     if(vkCreateDevice(physicalDevice, &deviceInfo, nullptr, &device) != VK_SUCCESS)
@@ -164,6 +170,44 @@ void VulkanManager::startUp(GLFWwindow *window)
     //get handle to the graphics  and presentation queues
     vkGetDeviceQueue(device, graphicsQueueFamilyIndex, 0, &graphicsQueue);
     vkGetDeviceQueue(device, presentQueueFamilyIndex, 0, &presentQueue);
+
+    //-------------------- SWAP-CHAIN --------------------
+
+    SwapchainSupportDetails swapchainDetails = {};
+    //populate the SwapchainSupportInfo struct:
+    {
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice,
+                                                  surface,
+                                                  &swapchainDetails.surfaceCapabilities);
+
+        uint32 surfaceFormatCount;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, nullptr);
+
+        if(surfaceFormatCount != 0)
+        {
+            swapchainDetails.surfaceFormats.resize(surfaceFormatCount);
+
+            vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice,
+                                                 surface,
+                                                 &surfaceFormatCount,
+                                                 swapchainDetails.surfaceFormats.data());
+        }
+
+        uint32 presentModeCount;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, nullptr);
+
+        if(presentModeCount != 0)
+        {
+            swapchainDetails.presentModes.resize(presentModeCount);
+
+            vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice,
+                                               surface,
+                                               &presentModeCount,
+                                               swapchainDetails.presentModes.data());
+        }
+    }
+
+    //check if swapchain is adequate
 }
 
 void VulkanManager::shutDown()

@@ -31,4 +31,11 @@ struct VulkanManager
     void shutDown();
 };
 
+struct SwapchainSupportDetails
+{
+    VkSurfaceCapabilitiesKHR surfaceCapabilities;
+    std::vector<VkSurfaceFormatKHR> surfaceFormats;
+    std::vector<VkPresentModeKHR> presentModes;
+};
+
 #endif
