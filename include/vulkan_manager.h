@@ -25,12 +25,15 @@ struct VulkanManager
     VkQueue graphicsQueue;
     VkQueue presentQueue;
 
+    std::vector<VkQueueFamilyProperties> queueFamilyProperties;
+    
     VkSwapchainKHR swapchain;
     std::vector<VkImage> swapchainImages;
     VkFormat swapchainImageFormat;
     VkExtent2D swapchainImageExtent;
 
-    std::vector<VkQueueFamilyProperties> queueFamilyProperties;
+    std::vector<VkImageView> swapchainImageViews;
+
 
     void startUp(GLFWwindow *window);
     void shutDown();
