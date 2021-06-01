@@ -597,18 +597,62 @@ void VulkanManager::startUp(GLFWwindow *window)
         
     }
 
+    //------------------- FRAMEBUFFERS ---------------------
+    //create framebuffers:
+    {
+        //create a framebuffer for each swapchain image view 
+        swapchainFramebuffers.resize(swapchainImageViews.size());
+        for(size_t i = 0; i < swapchainImageViews.size(); i++)
+        {
+            VkFramebufferCreateInfo framebufferInfo{};
+            framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebufferInfo.renderPass = renderPass;
+            framebufferInfo.attachmentCount = 1;
+            framebufferInfo.pAttachments = &swapchainImageViews[i];
+            framebufferInfo.width = swapchainImageExtent.width;
+            framebufferInfo.height = swapchainImageExtent.height;
+            framebufferInfo.layers = 1; //number of layers in image arrays
+
+            if(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapchainFramebuffers[i])
+               != VK_SUCCESS)
+            {
+                throw std::runtime_error("FATAL_ERROR: Unable to create framebuffer.");
+            }
+        }
+    }
 }
 
 void VulkanManager::shutDown()
 {
+    //framebuffers
+    for(VkFramebuffer framebuffer : swapchainFramebuffers)
+    {
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+
+    //pipeline and pipeline layout
+    vkDestroyPipeline(device, pipeline, nullptr);
+    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
+    //render pass
+    vkDestroyRenderPass(device, renderPass, nullptr);
+
+    //imageviews
     for(VkImageView imageView : swapchainImageViews)
     {
         vkDestroyImageView(device, imageView, nullptr);
     }
 
+    //swapchain
     vkDestroySwapchainKHR(device, swapchain, nullptr);
+
+    //device
     vkDestroyDevice(device, nullptr);
+
+    //surface
     vkDestroySurfaceKHR(instance, surface, nullptr);
+
+    //instance
     vkDestroyInstance(instance, nullptr);
 }
 

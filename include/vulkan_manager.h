@@ -37,6 +37,7 @@ struct VulkanManager
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
     VkPipeline pipeline;
+    std::vector<VkFramebuffer> swapchainFramebuffers;
 
     void startUp(GLFWwindow *window);
     void shutDown();
