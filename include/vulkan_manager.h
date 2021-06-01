@@ -34,9 +34,12 @@ struct VulkanManager
 
     std::vector<VkImageView> swapchainImageViews;
 
+    VkRenderPass renderPass;
+    VkPipelineLayout pipelineLayout;
 
     void startUp(GLFWwindow *window);
     void shutDown();
+
 };
 
 struct SwapchainSupportDetails

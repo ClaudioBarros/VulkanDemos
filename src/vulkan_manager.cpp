@@ -48,7 +48,7 @@ void VulkanManager::startUp(GLFWwindow *window)
 
     if(vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
     {
-        throw std::runtime_error("FATAL_ERROR: Could not create Vulkan Instance.");
+        throw std::runtime_error("FATAL_ERROR: Unable to create Vulkan Instance.");
     }
 
     //------ SURFACE ---------------
@@ -196,6 +196,10 @@ void VulkanManager::startUp(GLFWwindow *window)
                                                  &surfaceFormatCount,
                                                  surfaceFormats.data());
         }
+        else
+        {
+            throw std::runtime_error("FATAL_ERROR: Swapchain is not supported, Surface has no formats.");
+        }
 
         uint32 presentModeCount;
         vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, nullptr);
@@ -209,12 +213,10 @@ void VulkanManager::startUp(GLFWwindow *window)
                                                &presentModeCount,
                                                presentModes.data());
         }
-    }
-
-    //check for swapchain support 
-    if(surfaceFormats.empty() || presentModes.empty())
-    {
-        throw std::runtime_error("FATAL_ERROR: Swapchain is not supported.");
+        else
+        {
+            throw std::runtime_error("FATAL_ERROR: Swapchain is not supported, Surface has no present modes.");
+        }
     }
 
     //select swapchain settings:
@@ -289,7 +291,7 @@ void VulkanManager::startUp(GLFWwindow *window)
     //create swapchain:
     {
         uint32 imageCount = surfaceCapabilities.minImageCount + 1;
-        if((surfaceCapabilities.maxImageCount > 0) && (surfaceCapabilities.maxImageCount))
+        if((surfaceCapabilities.maxImageCount > 0) && (imageCount > surfaceCapabilities.maxImageCount))
         {
             //maxImageCount = 0 means there is no maximum
             imageCount = surfaceCapabilities.maxImageCount;
@@ -373,11 +375,126 @@ void VulkanManager::startUp(GLFWwindow *window)
 
         }
     }
+    //------------------- RENDER PASS --------------------
+    //create render pass:
+    {
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = swapchainImageFormat; //must match swapchain format
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; //not multisampled
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; //clear to black at frame start
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; //store the results when the frame ends
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; //not using a stencil buffer
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; //not using a stencil buffer
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; //image layout undefined at render pass start 
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;//transition layout to PRESENT_SRC_KHR 
+                                                                      //when render pass is complete
+
+        //Create subpass
+        //There will be a single subpass with a color attachment.
+
+        VkAttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.attachment = 0; //index of our single attachment
+        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        //there will be two layout transitions:
+        //UNDEFINED -> COLOR_ATTACHMENT_OPTIONAL.
+        //COLOR_ATTACHMENT_OPTIONAL -> PRESENT_SRC_KHR;
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorAttachmentRef;
+
+        //need to wait for the Window System Integration semaphore to signal
+        //"Only pipeline stages which depend on COLOR_ATTACHMENT_OUTPUT_BIT will
+        // actually wait for the semaphore, so we must also wait for that pipeline stage."
+        // src: official vulkan samples.
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+        //create the render pass:
+        VkRenderPassCreateInfo renderPassCreateInfo{};
+        renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassCreateInfo.attachmentCount = 1; 
+        renderPassCreateInfo.pAttachments = &colorAttachment;
+        renderPassCreateInfo.subpassCount = 1;
+        renderPassCreateInfo.pSubpasses = &subpass;
+        renderPassCreateInfo.dependencyCount = 1;
+        renderPassCreateInfo.pDependencies = &dependency;
+
+        if(vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &renderPass) != VK_SUCCESS)
+        {
+            throw std::runtime_error("FATAL_ERROR: Unable to create render pass.");
+        }
+    }
 
     //------------------- GRAPHICS PIPELINE ------------------
     //create graphics pipeline:
     {
+        //don't need to bind any resources for a simple triangle application
+        //since the necessary data will be defined directly in the vertex shader
+        VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
+        pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
+        if(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout)
+           != VK_SUCCESS)
+        {
+            throw std::runtime_error("FATAL_ERROR: Unable to create pipeline.");
+        }
+
+        VkPipelineVertexInputStateCreateInfo vertexInputCreateInfo{};
+        vertexInputCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+        //specify triangle lists as topology to draw geometry
+        VkPipelineInputAssemblyStateCreateInfo inputAssemblyCreateInfo{};
+        inputAssemblyCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssemblyCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        //specify rasterization state
+        VkPipelineRasterizationStateCreateInfo rasterCreateInfo{};
+        rasterCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterCreateInfo.lineWidth = 1.0f;
+
+        //attachment will write to all color channels
+        //no blending enabled
+        VkPipelineColorBlendAttachmentState blendAttachment{};
+        blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | 
+                                         VK_COLOR_COMPONENT_G_BIT |
+                                         VK_COLOR_COMPONENT_B_BIT |
+                                         VK_COLOR_COMPONENT_A_BIT;
+
+        VkPipelineColorBlendStateCreateInfo blendStateCreateInfo{};
+        blendStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        blendStateCreateInfo.attachmentCount = 1;
+        blendStateCreateInfo.pAttachments = &blendAttachment;
+
+        //specify that one viewport and one scissor box will be used
+        VkPipelineViewportStateCreateInfo viewportStateCreateInfo{};
+        viewportStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportStateCreateInfo.viewportCount = 1;
+        viewportStateCreateInfo.scissorCount = 1;
+
+        //disable depth and stencil testing
+        VkPipelineDepthStencilStateCreateInfo depthStencilCreateInfo{};
+        depthStencilCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+
+        //specify no multisampling
+        VkPipelineMultisampleStateCreateInfo multisampleCreateInfo{};
+        multisampleCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+
+        //Specify that the viewport and scissor states will be dynamic.
+        std::vector<VkDynamicState> dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
+        VkPipelineDynamicStateCreateInfo dynamicStatesCreateInfo{};
+        dynamicStatesCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicStatesCreateInfo.pDynamicStates = dynamicStates.data();
+        dynamicStatesCreateInfo.dynamicStateCount = (uint32)(dynamicStates.size());
+
+        //TODO: load shader modules        
     }
 }
 
@@ -393,3 +510,24 @@ void VulkanManager::shutDown()
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
