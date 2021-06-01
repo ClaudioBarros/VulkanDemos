@@ -1,6 +1,7 @@
 #include "vulkan_manager.h"
 #include <stdexcept>
 #include <algorithm>
+#include <fstream>
 
 const std::vector<const char*> validationLayers = {
                                                     "VK_LAYER_KHRONOS_validation"
@@ -494,8 +495,108 @@ void VulkanManager::startUp(GLFWwindow *window)
         dynamicStatesCreateInfo.pDynamicStates = dynamicStates.data();
         dynamicStatesCreateInfo.dynamicStateCount = (uint32)(dynamicStates.size());
 
-        //TODO: load shader modules        
+        std::vector<char> vertShaderFileBuffer;
+        std::vector<char> fragShaderFileBuffer;
+        
+        //Load shader modules:
+        {
+            std::string vertexShaderFilename = "shaders/triangle/triangle_vert.spv";
+            std::string fragmentShaderFilename = "shaders/triangle/triangle_frag.spv";
+
+            //start reading at the end of the file to be able to determine file size 
+            //spir-v files need to be read in binary mode
+            std::ifstream vertShaderFile(vertexShaderFilename, std::ios::ate | std::ios::binary);
+            std::ifstream fragShaderFile(vertexShaderFilename, std::ios::ate | std::ios::binary);
+
+            if(!vertShaderFile.is_open())
+            {
+                throw std::runtime_error("FATAL_ERROR: Unable to open vertex shader file.");
+            }
+            if(!fragShaderFile.is_open())
+            {
+                throw std::runtime_error("FATAL_ERROR: Unable to open fragment shader file.");
+            }
+
+            size_t vertShaderFilesize = (size_t)vertShaderFile.tellg();
+            size_t fragShaderFilesize = (size_t)fragShaderFile.tellg();
+            vertShaderFileBuffer.resize(vertShaderFilesize);
+            fragShaderFileBuffer.resize(fragShaderFilesize);
+            
+            vertShaderFile.seekg(0);
+            fragShaderFile.seekg(0);
+
+            vertShaderFile.read(vertShaderFileBuffer.data(), vertShaderFilesize);
+            fragShaderFile.read(fragShaderFileBuffer.data(), fragShaderFilesize);
+
+            vertShaderFile.close();
+            fragShaderFile.close();
+        }        
+
+        VkShaderModuleCreateInfo vertShaderCreateInfo{};
+        vertShaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        vertShaderCreateInfo.codeSize = vertShaderFileBuffer.size();
+        vertShaderCreateInfo.pCode = reinterpret_cast<const uint32*>(vertShaderFileBuffer.data());
+
+        VkShaderModuleCreateInfo fragShaderCreateInfo{};
+        fragShaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        fragShaderCreateInfo.codeSize = fragShaderFileBuffer.size();
+        fragShaderCreateInfo.pCode = reinterpret_cast<const uint32*>(fragShaderFileBuffer.data());
+        
+        //create shader modules 
+        VkShaderModule vertShaderModule;
+        VkShaderModule fragShaderModule;
+        
+        if(vkCreateShaderModule(device, &vertShaderCreateInfo, nullptr, &vertShaderModule) != VK_SUCCESS)
+        {
+            throw std::runtime_error("FATAL_ERROR: Unable to create vertex shader module.");
+        }
+
+        if(vkCreateShaderModule(device, &fragShaderCreateInfo, nullptr, &fragShaderModule) != VK_SUCCESS)
+        {
+            throw std::runtime_error("FATAL_ERROR: Unable to create vertex shader module.");
+        }
+
+        VkPipelineShaderStageCreateInfo vertShaderStageCreateInfo{};
+        vertShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vertShaderStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        vertShaderStageCreateInfo.module = vertShaderModule;
+        vertShaderStageCreateInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo fragShaderStageCreateInfo{};
+        fragShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragShaderStageCreateInfo.module = fragShaderModule;
+        fragShaderStageCreateInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageCreateInfo, fragShaderStageCreateInfo};
+
+        VkGraphicsPipelineCreateInfo pipelineCreateInfo{};
+        pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineCreateInfo.stageCount = 2; //2 -> vertex and shader stages
+        pipelineCreateInfo.pStages = shaderStages;
+        pipelineCreateInfo.pVertexInputState = &vertexInputCreateInfo;
+        pipelineCreateInfo.pInputAssemblyState = &inputAssemblyCreateInfo;
+        pipelineCreateInfo.pRasterizationState = &rasterCreateInfo;
+        pipelineCreateInfo.pColorBlendState = &blendStateCreateInfo;
+        pipelineCreateInfo.pMultisampleState = &multisampleCreateInfo;
+        pipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
+        pipelineCreateInfo.pDepthStencilState = &depthStencilCreateInfo;
+        pipelineCreateInfo.pDynamicState = &dynamicStatesCreateInfo;
+        pipelineCreateInfo.renderPass = renderPass;
+        pipelineCreateInfo.layout = pipelineLayout;
+
+        if(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline)
+           != VK_SUCCESS)
+        {
+            throw std::runtime_error("FATAL_ERROR: Unable to create graphics pipeline.");
+        }
+
+        //shader modules are safe to destroy after the graphics pipeline is created
+        vkDestroyShaderModule(device, fragShaderModule, nullptr);
+        vkDestroyShaderModule(device, vertShaderModule, nullptr);
+        
     }
+
 }
 
 void VulkanManager::shutDown()
