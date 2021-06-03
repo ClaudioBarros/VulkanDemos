@@ -10,6 +10,9 @@ const std::vector<const char*> deviceExtensions = {
                                                     "VK_KHR_swapchain"
                                                   };
                                             
+
+const int MAX_FRAMES = 3;
+
 void VulkanManager::startUp(GLFWwindow *window)
 {
     //INSTANCE CREATION
@@ -413,7 +416,9 @@ void VulkanManager::startUp(GLFWwindow *window)
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         dependency.dstSubpass = 0;
         dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = 0;
         dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
         //create the render pass:
         VkRenderPassCreateInfo renderPassCreateInfo{};
@@ -452,6 +457,7 @@ void VulkanManager::startUp(GLFWwindow *window)
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyCreateInfo{};
         inputAssemblyCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         inputAssemblyCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        inputAssemblyCreateInfo.primitiveRestartEnable = VK_FALSE;
 
         //specify rasterization state
         VkPipelineRasterizationStateCreateInfo rasterCreateInfo{};
@@ -473,6 +479,7 @@ void VulkanManager::startUp(GLFWwindow *window)
         blendStateCreateInfo.attachmentCount = 1;
         blendStateCreateInfo.pAttachments = &blendAttachment;
 
+
         //specify that one viewport and one scissor box will be used
         VkPipelineViewportStateCreateInfo viewportStateCreateInfo{};
         viewportStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -486,6 +493,7 @@ void VulkanManager::startUp(GLFWwindow *window)
         //specify no multisampling
         VkPipelineMultisampleStateCreateInfo multisampleCreateInfo{};
         multisampleCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampleCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
         //Specify that the viewport and scissor states will be dynamic.
         std::vector<VkDynamicState> dynamicStates{VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
@@ -500,13 +508,13 @@ void VulkanManager::startUp(GLFWwindow *window)
         
         //Load shader modules:
         {
-            std::string vertexShaderFilename = "shaders/triangle/triangle_vert.spv";
-            std::string fragmentShaderFilename = "shaders/triangle/triangle_frag.spv";
+            std::string vertShaderFilename = "shaders/triangle/triangle_vert.spv";
+            std::string fragShaderFilename = "shaders/triangle/triangle_frag.spv";
 
             //start reading at the end of the file to be able to determine file size 
             //spir-v files need to be read in binary mode
-            std::ifstream vertShaderFile(vertexShaderFilename, std::ios::ate | std::ios::binary);
-            std::ifstream fragShaderFile(vertexShaderFilename, std::ios::ate | std::ios::binary);
+            std::ifstream vertShaderFile(vertShaderFilename, std::ios::ate | std::ios::binary);
+            std::ifstream fragShaderFile(fragShaderFilename, std::ios::ate | std::ios::binary);
 
             if(!vertShaderFile.is_open())
             {
@@ -594,7 +602,7 @@ void VulkanManager::startUp(GLFWwindow *window)
         //shader modules are safe to destroy after the graphics pipeline is created
         vkDestroyShaderModule(device, fragShaderModule, nullptr);
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
-        
+
     }
 
     //------------------- FRAMEBUFFERS ---------------------
@@ -620,10 +628,210 @@ void VulkanManager::startUp(GLFWwindow *window)
             }
         }
     }
+
+    //--------------------- COMMAND POOL -----------------------
+    //create command pool:
+    {
+       VkCommandPoolCreateInfo  cmdPoolInfo{};
+       cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+       cmdPoolInfo.queueFamilyIndex = graphicsQueueFamilyIndex;
+       cmdPoolInfo.flags = 0;
+
+       if(vkCreateCommandPool(device, &cmdPoolInfo, nullptr, &cmdPool) != VK_SUCCESS)
+       {
+           throw std::runtime_error("FATAL ERROR: Unable to create command pool.");
+       }
+    }
+
+    //------------------- COMMAND BUFFERS --------------------------
+    //create command buffers, one for each swapchain image:
+    {
+        cmdBuffers.resize(swapchainFramebuffers.size());
+
+        VkCommandBufferAllocateInfo cmdBufferAllocInfo{};
+        cmdBufferAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmdBufferAllocInfo.commandPool = cmdPool;
+        cmdBufferAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmdBufferAllocInfo.commandBufferCount = (uint32)cmdBuffers.size();
+
+        if(vkAllocateCommandBuffers(device, &cmdBufferAllocInfo, cmdBuffers.data()))
+        {
+            throw std::runtime_error("failed to allocate command buffers!");
+        }
+    }
+
+    //record command buffers:
+    {
+        for(size_t i = 0; i < cmdBuffers.size(); i++)
+        {
+            VkCommandBufferBeginInfo cmdBufferBeginInfo{};
+            cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            cmdBufferBeginInfo.flags = 0; //Optional
+            cmdBufferBeginInfo.pInheritanceInfo = nullptr; //Optional
+
+            if( vkBeginCommandBuffer(cmdBuffers[i], &cmdBufferBeginInfo) != VK_SUCCESS)
+            {
+                throw std::runtime_error("FATAL ERROR: Unable to record command buffer");
+            }
+            
+            VkRenderPassBeginInfo renderPassInfo{};
+            renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassInfo.renderPass = renderPass;
+            renderPassInfo.framebuffer = swapchainFramebuffers[i];
+            renderPassInfo.renderArea.offset = {0, 0};
+            renderPassInfo.renderArea.extent = swapchainImageExtent;
+
+            VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 1.0f}; // black - 100% opaque
+            renderPassInfo.clearValueCount = 1;
+            renderPassInfo.pClearValues = &clearColor;
+
+            vkCmdBeginRenderPass(cmdBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+            vkCmdBindPipeline(cmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+            //set viewport and scissor dynamically
+            VkViewport vp{};
+            vp.width = (float) swapchainImageExtent.width;
+            vp.height = (float) swapchainImageExtent.height;
+            vp.minDepth = 0.0f;
+            vp.maxDepth = 1.0f;
+
+            VkRect2D scissor{};
+            scissor.extent.width = (float) swapchainImageExtent.width;
+            scissor.extent.height = (float) swapchainImageExtent.height;
+
+            vkCmdSetViewport(cmdBuffers[i], 0, 1, &vp);
+            vkCmdSetScissor(cmdBuffers[i], 0, 1, &scissor);
+
+            //draw 3 vertices with 1 instance
+            vkCmdDraw(cmdBuffers[i], 3, 1, 0, 0);
+
+            vkCmdEndRenderPass(cmdBuffers[i]);
+
+            if(vkEndCommandBuffer(cmdBuffers[i]) != VK_SUCCESS)
+            {
+                throw std::runtime_error("failed to record command buffer!");
+            }
+        }
+
+    }
+
+    //---------------------------- SEMAPHORES ------------------------------------
+    //create semaphores and fences:
+    {
+        imageAvailableSemaphores.resize(MAX_FRAMES);
+        renderFinishedSemaphores.resize(MAX_FRAMES);
+        queueSubmitFences.resize(MAX_FRAMES);
+        imageInUseFences.resize(swapchainImages.size(), VK_NULL_HANDLE);
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+
+        for(size_t i = 0; i < MAX_FRAMES; i++)
+        {
+            if(   vkCreateSemaphore(device, 
+                                 &semaphoreInfo, 
+                                 nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS 
+               || vkCreateSemaphore(device, 
+                                    &semaphoreInfo, 
+                                    nullptr, 
+                                    &renderFinishedSemaphores[i]) != VK_SUCCESS
+               || vkCreateFence(device,
+                                &fenceInfo,
+                                nullptr,
+                                &queueSubmitFences[i]) != VK_SUCCESS
+              )
+            {
+                throw std::runtime_error(
+                "FATAL ERROR: Unable to create synchronization objects for a frame."
+                                        );
+            }
+        }
+
+
+    }
+}
+
+void VulkanManager::renderFrame()
+{
+    vkWaitForFences(device, 1, &queueSubmitFences[currFrame], VK_TRUE, UINT64_MAX);
+
+    uint32 imgIndex;
+    //UINT64_MAX disables timeout
+    vkAcquireNextImageKHR(device, 
+                          swapchain, 
+                          UINT64_MAX, 
+                          imageAvailableSemaphores[currFrame],
+                          VK_NULL_HANDLE,
+                          &imgIndex);
+
+    //check if a previous frame is using this image
+    if(imageInUseFences[imgIndex] != VK_NULL_HANDLE)
+    {
+        vkWaitForFences(device, 1, &queueSubmitFences[imgIndex], VK_TRUE, UINT64_MAX);
+    }
+
+    //mark image as being used by this frame
+    imageInUseFences[imgIndex] = queueSubmitFences[currFrame];
+
+
+    //submit command buffer
+    VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currFrame]};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+    VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currFrame]};
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmdBuffers[imgIndex];
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    vkResetFences(device, 1, &queueSubmitFences[currFrame]);
+
+    if(vkQueueSubmit(graphicsQueue, 1, &submitInfo, queueSubmitFences[currFrame]) != VK_SUCCESS)
+    {
+        throw std::runtime_error("FATAL ERROR: Unable to submit command buffer");
+    }
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+
+    VkSwapchainKHR swapchains[] = {swapchain};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapchains;
+    presentInfo.pImageIndices = &imgIndex;
+    presentInfo.pResults = nullptr; //options
+    
+    vkQueuePresentKHR(presentQueue, &presentInfo);
+
+    currFrame = (currFrame + 1) % MAX_FRAMES;
 }
 
 void VulkanManager::shutDown()
 {
+    //semaphores and fences
+    for(size_t i = 0; i < MAX_FRAMES; i++)
+    {
+        vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+        vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+        vkDestroyFence(device, queueSubmitFences[i], nullptr);
+    }
+
+    //command pool
+    vkDestroyCommandPool(device, cmdPool, nullptr);
+
     //framebuffers
     for(VkFramebuffer framebuffer : swapchainFramebuffers)
     {

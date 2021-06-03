@@ -29,3 +29,8 @@ void RenderManager::shutDown()
     glfwDestroyWindow(window);
     glfwTerminate();
 }
+
+void RenderManager::render()
+{
+   vulkanManager.renderFrame(); 
+}

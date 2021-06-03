@@ -21,6 +21,7 @@ int main()
 
     while(!glfwWindowShouldClose(game.renderManager.window)) {
         glfwPollEvents();
+        game.renderManager.render();
     }
 
     return 0;

@@ -39,8 +39,21 @@ struct VulkanManager
     VkPipeline pipeline;
     std::vector<VkFramebuffer> swapchainFramebuffers;
 
+    VkCommandPool cmdPool;
+    std::vector<VkCommandBuffer> cmdBuffers;
+
+    std::vector<VkSemaphore> imageAvailableSemaphores;
+    std::vector<VkSemaphore> renderFinishedSemaphores;
+
+    std::vector<VkFence> queueSubmitFences;
+    std::vector<VkFence> imageInUseFences;
+
+    size_t currFrame = 0;
+
     void startUp(GLFWwindow *window);
     void shutDown();
+
+    void renderFrame();
 
 };
 

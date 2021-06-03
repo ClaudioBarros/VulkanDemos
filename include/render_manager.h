@@ -16,6 +16,8 @@ struct RenderManager
     
     void startUp();
     void shutDown();
+
+    void render();
 };
 
 #endif
