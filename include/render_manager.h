@@ -17,6 +17,7 @@ struct RenderManager
     void startUp();
     void shutDown();
 
+    static void handleResize(GLFWwindow *window, int width, int height);
     void render();
 };
 

@@ -10,6 +10,8 @@
 
 struct VulkanManager
 {
+    GLFWwindow *window;
+
     VkInstance instance;
 
     VkSurfaceKHR surface;
@@ -24,6 +26,9 @@ struct VulkanManager
 
     VkQueue graphicsQueue;
     VkQueue presentQueue;
+
+    uint32 graphicsQueueFamilyIndex;
+    uint32 presentQueueFamilyIndex;
 
     std::vector<VkQueueFamilyProperties> queueFamilyProperties;
     
@@ -50,8 +55,22 @@ struct VulkanManager
 
     size_t currFrame = 0;
 
+    bool windowWasResized = false;
+    
     void startUp(GLFWwindow *window);
     void shutDown();
+
+    void createSwapchain();
+    void createRenderPass();
+    void createGraphicsPipeline();
+    void createFramebuffers(); 
+    void createCommandPool();
+    void createCommandBuffers();
+    void createSyncPrimitives();
+
+    void destroySwapchain();
+
+    void resize();
 
     void renderFrame();
 

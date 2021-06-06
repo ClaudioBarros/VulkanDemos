@@ -17,6 +17,8 @@ void RenderManager::startUp()
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     window = glfwCreateWindow(1280, 720, "Vulkan window", nullptr, nullptr);
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, handleResize);
 
     //Vulkan
     vulkanManager.startUp(window);
@@ -28,6 +30,13 @@ void RenderManager::shutDown()
     vulkanManager.shutDown();
     glfwDestroyWindow(window);
     glfwTerminate();
+}
+
+void RenderManager::handleResize(GLFWwindow *window, int width, int height)
+{
+    glfwGetWindowUserPointer(window);
+    RenderManager* ptrRenderManager = reinterpret_cast<RenderManager*>(glfwGetWindowUserPointer(window));
+    ptrRenderManager->vulkanManager.windowWasResized = true;
 }
 
 void RenderManager::render()
