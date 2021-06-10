@@ -4,8 +4,6 @@
 #include "typedefs_and_macros.h"
 #include "vulkan_manager.h"
 
-#include <vector>
-
 struct RenderManager
 {
     GLFWwindow *window;

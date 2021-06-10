@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "render_manager.h"
-#include "vulkan_manager.h"
 
 void RenderManager::startUp()
 {

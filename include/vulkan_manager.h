@@ -44,6 +44,9 @@ struct VulkanManager
     VkPipeline pipeline;
     std::vector<VkFramebuffer> swapchainFramebuffers;
 
+    VkBuffer vertexBuffer;
+    VkDeviceMemory vertexBufferMemory;
+
     VkCommandPool cmdPool;
     std::vector<VkCommandBuffer> cmdBuffers;
 
@@ -53,18 +56,21 @@ struct VulkanManager
     std::vector<VkFence> queueSubmitFences;
     std::vector<VkFence> imageInUseFences;
 
-    size_t currFrame = 0;
+    size_t currFrame = 0;           
 
     bool windowWasResized = false;
     
     void startUp(GLFWwindow *window);
     void shutDown();
 
+    uint32 getMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties);
+
     void createSwapchain();
     void createRenderPass();
     void createGraphicsPipeline();
     void createFramebuffers(); 
     void createCommandPool();
+    void createVertexBuffer();
     void createCommandBuffers();
     void createSyncPrimitives();
 

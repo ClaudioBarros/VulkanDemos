@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <fstream>
+#include "vertex_formats.h"
 
 const std::vector<const char*> validationLayers = {
                                                     "VK_LAYER_KHRONOS_validation"
@@ -12,6 +13,13 @@ const std::vector<const char*> deviceExtensions = {
                                             
 
 const int MAX_FRAMES = 3;
+
+const std::vector<Vertex> vertices =
+{
+    {{0.0f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}
+};
 
 void VulkanManager::startUp(GLFWwindow *window)
 {
@@ -181,6 +189,7 @@ void VulkanManager::startUp(GLFWwindow *window)
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
+    createVertexBuffer();
     createCommandBuffers();
     createSyncPrimitives();
 
@@ -447,8 +456,6 @@ void VulkanManager::createRenderPass()
 
 void VulkanManager::createGraphicsPipeline()
 {
-    //don't need to bind any resources for a simple triangle application
-    //since the necessary data will be defined directly in the vertex shader
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
     pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
@@ -458,8 +465,35 @@ void VulkanManager::createGraphicsPipeline()
         throw std::runtime_error("FATAL_ERROR: Unable to create pipeline.");
     }
 
+    //vertex binding description 
+    VkVertexInputBindingDescription vertexBindingDescription{};
+    vertexBindingDescription.binding = 0;
+    vertexBindingDescription.stride = sizeof(Vertex);
+    vertexBindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    //vertex position attachment description
+    VkVertexInputAttributeDescription posAttributeDescription{};
+    posAttributeDescription.binding = 0;
+    posAttributeDescription.location = 0;
+    posAttributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
+    posAttributeDescription.offset = offsetof(Vertex, pos);
+
+    //vertex color attachment description 
+    VkVertexInputAttributeDescription colorAttributeDescription{};
+    colorAttributeDescription.binding = 0;
+    colorAttributeDescription.location = 1;
+    colorAttributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
+    colorAttributeDescription.offset = offsetof(Vertex, color);
+
+    VkVertexInputAttributeDescription vertexAttributeDescriptions[] = {posAttributeDescription, colorAttributeDescription};
+
     VkPipelineVertexInputStateCreateInfo vertexInputCreateInfo{};
     vertexInputCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputCreateInfo.vertexBindingDescriptionCount = 1;
+    vertexInputCreateInfo.vertexAttributeDescriptionCount = 2; //position and color
+    vertexInputCreateInfo.pVertexBindingDescriptions = &vertexBindingDescription; 
+    vertexInputCreateInfo.pVertexAttributeDescriptions = vertexAttributeDescriptions;
+
 
     //specify triangle lists as topology to draw geometry
     VkPipelineInputAssemblyStateCreateInfo inputAssemblyCreateInfo{};
@@ -648,6 +682,62 @@ void VulkanManager::createCommandPool()
     }
 }
 
+uint32 VulkanManager::getMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties)
+{
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+    for(uint32 i = 0; i < memProperties.memoryTypeCount; i++)
+    {
+        if((typeFilter & (1 << i)) && 
+          ((memProperties.memoryTypes[i].propertyFlags & properties) == properties))
+        {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("FATAL ERROR: Unable to get suitable memory type from the physical device.");
+}
+
+void VulkanManager::createVertexBuffer()
+{
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if(vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
+    {
+        throw std::runtime_error("FATAL ERROR: Unable to create buffer.");
+    }
+
+    //memory allocation for the buffer:
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = getMemoryType(memRequirements.memoryTypeBits,
+                                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | 
+                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if(vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS)
+    {
+        throw std::runtime_error("FATAL ERROR: Unable to allocate buffer memory.");
+    }
+
+    vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+    //copy vertex data to buffer
+    void *data;
+    vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+    memcpy(data, vertices.data(), (size_t)bufferInfo.size);
+    vkUnmapMemory(device, vertexBufferMemory);
+    
+}
+
 void VulkanManager::createCommandBuffers()
 {
     //create command buffers, one for each swapchain image:
@@ -692,6 +782,11 @@ void VulkanManager::createCommandBuffers()
 
         vkCmdBindPipeline(cmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
+        VkBuffer vertexBuffers[] = {vertexBuffer};
+        VkDeviceSize offsets[] = {0};
+
+        vkCmdBindVertexBuffers(cmdBuffers[i], 0, 1, vertexBuffers, offsets);
+
         //set viewport and scissor dynamically
         VkViewport vp{};
         vp.width = (float) swapchainImageExtent.width;
@@ -707,7 +802,7 @@ void VulkanManager::createCommandBuffers()
         vkCmdSetScissor(cmdBuffers[i], 0, 1, &scissor);
 
         //draw 3 vertices with 1 instance
-        vkCmdDraw(cmdBuffers[i], 3, 1, 0, 0);
+        vkCmdDraw(cmdBuffers[i], (uint32)(vertices.size()), 1, 0, 0);
 
         vkCmdEndRenderPass(cmdBuffers[i]);
 
@@ -802,6 +897,8 @@ void VulkanManager::resize()
     createGraphicsPipeline();
     createFramebuffers();
     createCommandBuffers();
+
+    imageInUseFences.resize(swapchainImages.size(), VK_NULL_HANDLE);
 }
 
 void VulkanManager::renderFrame()
@@ -822,7 +919,7 @@ void VulkanManager::renderFrame()
         resize();
         return;
     }
-    if(result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR);
+    if((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR))
     {
         throw std::runtime_error("FATAL_ERROR: Unable to acquire swapchain image.");
     }
@@ -877,7 +974,7 @@ void VulkanManager::renderFrame()
     {
         resize();
     }
-    if(result != VK_SUCCESS)
+    else if(result != VK_SUCCESS)
     {
         throw std::runtime_error("FATAL ERROR: Unable to present swapchain image.");
     }
@@ -888,6 +985,10 @@ void VulkanManager::renderFrame()
 void VulkanManager::shutDown()
 {
     destroySwapchain();
+    
+    //vertex buffer and its memory
+    vkDestroyBuffer(device, vertexBuffer, nullptr);
+    vkFreeMemory(device, vertexBufferMemory, nullptr);
 
     //semaphores and fences
     for(size_t i = 0; i < MAX_FRAMES; i++)
