@@ -40,12 +40,18 @@ struct VulkanManager
     std::vector<VkImageView> swapchainImageViews;
 
     VkRenderPass renderPass;
+    VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
     VkPipeline pipeline;
     std::vector<VkFramebuffer> swapchainFramebuffers;
 
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
+    VkBuffer indexBuffer;
+    VkDeviceMemory indexBufferMemory;
+
+    std::vector<VkBuffer> uniformBuffers;
+    std::vector<VkDeviceMemory> uniformBuffersMemory;
 
     VkCommandPool cmdPool;
     std::vector<VkCommandBuffer> cmdBuffers;
@@ -65,12 +71,24 @@ struct VulkanManager
 
     uint32 getMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties);
 
+    void createBuffer(VkDeviceSize size, 
+                      VkBufferUsageFlags usageFlags, 
+                      VkMemoryPropertyFlags propertyFlags,
+                      VkBuffer &buffer, VkDeviceMemory &bufferMemory);
+
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+
+    void updateUniformBuffer(uint32 currImage);
+
     void createSwapchain();
     void createRenderPass();
+    void createDescriptorSetLayout();
     void createGraphicsPipeline();
     void createFramebuffers(); 
     void createCommandPool();
     void createVertexBuffer();
+    void createIndexBuffer();
+    void createUniformBuffers();
     void createCommandBuffers();
     void createSyncPrimitives();
 
@@ -80,6 +98,13 @@ struct VulkanManager
 
     void renderFrame();
 
+};
+
+struct UniformBufferObject
+{
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
 };
 
 struct SwapchainSupportDetails
