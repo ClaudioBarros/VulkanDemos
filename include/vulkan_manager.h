@@ -6,6 +6,8 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <glm/glm.hpp>
+
 #include <vector>
 
 struct VulkanManager
@@ -50,8 +52,16 @@ struct VulkanManager
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMemory;
 
+    VkDescriptorPool descriptorPool;
+    std::vector<VkDescriptorSet> descriptorSets;    
+
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
+
+    VkImage textureImg;    
+    VkDeviceMemory textureImgMemory;
+    VkImageView textureImgView;
+    VkSampler textureSampler;
 
     VkCommandPool cmdPool;
     std::vector<VkCommandBuffer> cmdBuffers;
@@ -69,6 +79,19 @@ struct VulkanManager
     void startUp(GLFWwindow *window);
     void shutDown();
 
+    void createImage(uint32 width, uint32 height,
+                     VkFormat format, VkImageTiling tiling, 
+                     VkImageUsageFlags usage, VkMemoryPropertyFlags properties, 
+                     VkImage& image, VkDeviceMemory& imageMemory);
+
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
+    void transitionImageLayout(VkImage image, VkFormat format, 
+                               VkImageLayout oldLayout, VkImageLayout newLayout);
+
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32 width, uint32 height);
+
     uint32 getMemoryType(uint32 typeFilter, VkMemoryPropertyFlags properties);
 
     void createBuffer(VkDeviceSize size, 
@@ -80,15 +103,21 @@ struct VulkanManager
 
     void updateUniformBuffer(uint32 currImage);
 
+
     void createSwapchain();
     void createRenderPass();
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
     void createFramebuffers(); 
     void createCommandPool();
+    void createTextureImage();
+    void createTextureImageView();
+    void createTextureSampler();
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();
+    void createDescriptorPool();
+    void createDescriptorSets();
     void createCommandBuffers();
     void createSyncPrimitives();
 
@@ -102,9 +131,9 @@ struct VulkanManager
 
 struct UniformBufferObject
 {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
 };
 
 struct SwapchainSupportDetails
