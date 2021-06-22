@@ -52,6 +52,10 @@ struct VulkanManager
     VkBuffer indexBuffer;
     VkDeviceMemory indexBufferMemory;
 
+    VkImage depthImage;
+    VkDeviceMemory depthImageMemory;
+    VkImageView depthImageView;
+
     VkDescriptorPool descriptorPool;
     std::vector<VkDescriptorSet> descriptorSets;    
 
@@ -110,6 +114,7 @@ struct VulkanManager
     void createGraphicsPipeline();
     void createFramebuffers(); 
     void createCommandPool();
+    void createDepthResources();
     void createTextureImage();
     void createTextureImageView();
     void createTextureSampler();
