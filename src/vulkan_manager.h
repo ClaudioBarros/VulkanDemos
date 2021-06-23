@@ -4,7 +4,7 @@
 #include "vulkan/vulkan.h"
 #include <vector>
 #include <string>
-
+#include "platform.h"
 #include "typedefs_and_macros.h"
 
 struct VulkanManager
@@ -16,14 +16,16 @@ struct VulkanManager
 	VulkanManager(){} //do nothing
 	~VulkanManager(){} //do nothing
 
-	void startUp(VulkanConfig config);
+	void startUp(Window window, VulkanConfig config);
 	void shutDown();
 
 	void initInstance();
+	void initSurface();
 };
 
 struct VulkanConfig
 {
+	std::string appName;
 	bool enableValidationLayers;
 	std::string errorLogFilePath;
 	

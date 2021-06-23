@@ -1,52 +1,22 @@
 #include "vulkan_manager.h"
 
-void VulkanManager::startUp(VulkanConfig vulkanConfig)
+void VulkanManager::startUp(Window &window, VulkanConfig vulkanConfig)
 {
-    
     //INSTANCE CREATION
     this->config = vulkanConfig;
 
-    VkApplicationInfo appInfo = {};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Demo";
-    appInfo.applicationVersion = 1;
-    appInfo.engineVersion = 1;
-    appInfo.apiVersion = VK_API_VERSION_1_2;
+    //------ INSTANCE ---------
 
-    VkInstanceCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-
-    uint32 glfwExtensionCount = 0;
-    const char** glfwExtensions;
-
-    createInfo.enabledExtensionCount = (uint32)(config.deviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = config.deviceExtensions.data();
-
-    if(config.enableValidationLayers)
-    {
-        createInfo.enabledLayerCount = (uint32)(config.validationLayers.size());
-        createInfo.ppEnabledLayerNames = config.validationLayers.data();
-    }
-    else
-    {
-        createInfo.enabledLayerCount = 0;
-    }
-
-    VkResult result =  
-    if(vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
-    {
-        throw std::runtime_error("FATAL_ERROR: Unable to create Vulkan Instance.");
-    }
+    initInstance();
 
     //------ SURFACE ---------------
 
-    if(glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
-    {
-        throw std::runtime_error("FATAL_ERROR: Unable to create window surface.");
-    }
+    initSurface(); //TODO: FINISH THIS!!!
 
     //----- PHYSICAL DEVICE ------------
+
+    initPhysicalDevice();
+
 
     uint32 gpuCount = 0;
     vkEnumeratePhysicalDevices(instance, &gpuCount, nullptr);
@@ -179,7 +149,52 @@ void VulkanManager::startUp(VulkanConfig vulkanConfig)
 
 }
 
-void VulkanManager::initInstance();
+void VulkanManager::initPhysicalDevice()
+{
+
+}
+
+void VulkanManager::initSurface(Window &window)
+{
+    VkWin32SurfaceCreateInfoKHR createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    createInfo.hwnd = window.handle;
+    createInfo.hinstance = GetModuleHandle(nullptr);
+}
+
+void VulkanManager::initInstance()
+{
+    VkApplicationInfo appInfo = {};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = config.appName;
+    appInfo.applicationVersion = 1;
+    appInfo.engineVersion = 1;
+    appInfo.apiVersion = VK_API_VERSION_1_2;
+
+    VkInstanceCreateInfo createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+
+    uint32 glfwExtensionCount = 0;
+    const char** glfwExtensions;
+
+    createInfo.enabledExtensionCount = (uint32)(config.deviceExtensions.size());
+    createInfo.ppEnabledExtensionNames = config.deviceExtensions.data();
+
+    if(config.enableValidationLayers)
+    {
+        createInfo.enabledLayerCount = (uint32)(config.validationLayers.size());
+        createInfo.ppEnabledLayerNames = config.validationLayers.data();
+    }
+    else
+    {
+        createInfo.enabledLayerCount = 0;
+    }
+
+    VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance));
+}
+
+
 void VulkanManager::shutDown()
 {
 
