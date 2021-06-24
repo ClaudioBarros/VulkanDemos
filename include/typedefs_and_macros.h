@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
-
 #include "to_string.h"
 
 //------- TYPEDEFS ---------
@@ -21,11 +20,12 @@ typedef uint32_t uint32;
 #define LOGGER_FORMAT "[%^%l%$] %v"
 #define PROJECT_NAME "VulkanDemos"
 
-#define __FILENAME__ (static_cast<const char *>(__FILE__) + ROOT_PATH_SIZE)
+// #define __FILENAME__ (static_cast<const char *>(__FILE__) + ROOT_PATH_SIZE)
 
 #define LOGI(...) spdlog::info(__VA_ARGS__);
 #define LOGW(...) spdlog::warn(__VA_ARGS__);
-#define LOGE(...) spdlog::error("[{}:{}] {}", __FILENAME__, __LINE__, fmt::format(__VA_ARGS__));
+#define LOGE(...) spdlog::error("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__));
+#define LOGE_EXIT(...) spdlog::error("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__)); exit(1);
 #define LOGD(...) spdlog::debug(__VA_ARGS__);
 
 #define VK_CHECK(x)                                                 \
@@ -35,7 +35,7 @@ typedef uint32_t uint32;
 		if (err)                                                    \
 		{                                                           \
 			LOGE("Detected Vulkan error: {}", vulkanToString(err)); \
-			exit(1);                                                 \
+			exit(1);                                                \
 		}                                                           \
 	} while (0)
 

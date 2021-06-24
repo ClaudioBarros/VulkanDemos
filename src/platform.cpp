@@ -12,7 +12,7 @@ void Win32Window::init(HINSTANCE hInstance, const std::wstring windowClassName)
     windowClass.cbSize = sizeof(WNDCLASSEX);
     windowClass.style = CS_HREDRAW | CS_VREDRAW;
     windowClass.lpfnWndProc = this->windowProc;
-    windowClass.hInstance = hInstance;  // hInstance
+    windowClass.hInstance = hInstance;  
     windowClass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     windowClass.lpszClassName = windowClassName.data();
 
@@ -36,21 +36,21 @@ void Win32Window::init(HINSTANCE hInstance, const std::wstring windowClassName)
                                   0,               			        // handle to parent
                                   0,               			        // handle to menu
                                   this->hInstance,    			    // hInstance
-                                  NULL);               				// no extra parameters
+                                  0);               				// no extra parameters
     if (!this->window)
 	{
         LOGE("Unable to create a Win32 Window.");
         exit(1);
     }
 
-    // Window client area size must be at least 1 pixel high, to prevent crash.
-    this->minWidth = GetSystemMetrics(SM_CXMINTRACK);
-    this->minHeight = GetSystemMetrics(SM_CYMINTRACK) + 1;
+    // Window client area size must be at least 1 pixel high to prevent crashes.
+    this->minX = GetSystemMetrics(SM_CXMINTRACK);
+    this->minY = GetSystemMetrics(SM_CYMINTRACK) + 1;
 }
 
 void Win32Window::destroy()
 {
-
+    //Windows are destroyed automatically by the OS once the program exits.
 }
 
 LRESULT CALLBACK Win32Window::windowProc(HWND   hwnd,
@@ -58,5 +58,14 @@ LRESULT CALLBACK Win32Window::windowProc(HWND   hwnd,
 									WPARAM wParam,
 									LPARAM lParam)
 {
+    LRESULT result = 0;
 
+    switch(uMsg)
+    {
+        default:
+        {
+            result = DefWindowProcA(hWindow, uMsg, wParam, lParam);
+        }
+    }
+    return result;
 }

@@ -3,7 +3,8 @@
 
 #include <windows.h>
 #include <string>
-
+#include "typedefs_and_macros.h"
+ 
 struct Win32Window
 {
 	HWND window;
@@ -13,16 +14,16 @@ struct Win32Window
 	uint32 width;
 	uint32 height;
 	
-	uint32 minWidth;
-	uint32 minHeight;
+	uint32 minX;
+	uint32 minY;
 
 	static 	LRESULT CALLBACK windowProc(HWND   hwnd,
 										UINT   uMsg,
 										WPARAM wParam,
 										LPARAM lParam);
 
-	Window(){};	
-	~Window(){};
+	Win32Window(){}
+	~Win32Window(){}
 
 	void init(HINSTANCE hInstance, const std::wstring windowClassName);
 	void destroy();

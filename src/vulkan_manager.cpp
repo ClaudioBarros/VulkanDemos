@@ -1,6 +1,6 @@
 #include "vulkan_manager.h"
 
-void VulkanManager::startUp(Window &window, VulkanConfig vulkanConfig)
+void VulkanManager::startUp(Win32Window &window, VulkanConfig vulkanConfig)
 {
     //INSTANCE CREATION
     this->config = vulkanConfig;
@@ -16,29 +16,6 @@ void VulkanManager::startUp(Window &window, VulkanConfig vulkanConfig)
     //----- PHYSICAL DEVICE ------------
 
     initPhysicalDevice();
-
-
-    uint32 gpuCount = 0;
-    vkEnumeratePhysicalDevices(instance, &gpuCount, nullptr);
-    if(gpuCount == 0)
-    {
-        throw std::runtime_error("FATAL_ERROR: No GPUs with Vulkan Support.");
-    }
-
-    std::vector<VkPhysicalDevice> physicalDevices(gpuCount);
-    if(vkEnumeratePhysicalDevices(instance, &gpuCount, physicalDevices.data()) != VK_SUCCESS)
-    {
-        throw std::runtime_error("FATAL_ERROR: Unable to enumerate physical devices.");
-    }
-
-    //NOTE: for now, the first device enumerated is selected. 
-    //TODO: change this to select the best available GPU.
-    physicalDevice = physicalDevices[0];
-    
-    //Store device properties
-    vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
-    vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &deviceMemoryProperties);
 
     //-------- QUEUE FAMILIES ------------------
     //queue family properties, used for setting up requested queues upon device creation
@@ -151,6 +128,65 @@ void VulkanManager::startUp(Window &window, VulkanConfig vulkanConfig)
 
 void VulkanManager::initPhysicalDevice()
 {
+    uint32 gpuCount = 0;
+    VK_CHECK(vkEnumeratePhysicalDevices(instance, &gpuCount, nullptr));
+
+    if(gpuCount <= 0)
+    {
+        LOGE_EXIT("VkEnumeratePhysicalDevice returned no accessible devie.");
+    }
+
+    std::vector<VkPhysicalDevice> physicalDevices(gpuCount);
+    VK_CHECK(vkEnumeratePhysicalDevices(instance, &gpuCount, physicalDevices.data()));
+
+    //try to select the best available GPU
+    //look for a discrete gpu, if not found, settle for an integrated one, and so on.
+
+    //VK_PHYSICAL_DEVICE_TYPE enums RANGE FROM 0 TO 4;
+    std::vector<bool> deviceTypes((VK_PHYSICAL_DEVICE_TYPE_CPU + 1), false);
+    
+    VkPhysicalDeviceProperties deviceProperties;
+    for(size_t i = 0; i < physicalDevices.size(); i++)
+    {
+        vkGetPhysicalDeviceProperties(physicalDevices[i], &deviceProperties);
+        deviceTypes[deviceProperties.deviceType] = true;
+    }
+
+    VkPhysicalDeviceType selectedType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;        
+    if (deviceTypes[VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU]) 
+    {
+        selectedType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+    } 
+    else if (deviceTypes[VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU]) 
+    {
+        selectedType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+    }
+    else if (deviceTypes[VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU]) 
+    {
+        selectedType = VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU;
+    } 
+    else if (deviceTypes[VK_PHYSICAL_DEVICE_TYPE_CPU]) 
+    {
+        selectedType = VK_PHYSICAL_DEVICE_TYPE_CPU;
+    } 
+    else if (deviceTypes[VK_PHYSICAL_DEVICE_TYPE_OTHER]) 
+    {
+        selectedType = VK_PHYSICAL_DEVICE_TYPE_OTHER;
+    }
+
+    for(uint32_t i = 0; i < gpuCount; i++)
+    {
+        vkGetPhysicalDeviceProperties(physicalDevices[i], &deviceProperties);
+        if(deviceProperties.deviceType == selectedType)
+        {
+            this->physicalDevice.init(physicalDevices[i]);
+            break;
+        }
+    }
+
+    LOGI("Selected GPU: {}, type {}", 
+         this->physicalDevice.properties.deviceName,
+         this->physicalDevice.properties.deviceType);
 
 }
 
@@ -159,7 +195,9 @@ void VulkanManager::initSurface(Window &window)
     VkWin32SurfaceCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
     createInfo.hwnd = window.handle;
-    createInfo.hinstance = GetModuleHandle(nullptr);
+    createInfo.hinstance = window.hInstance;
+
+    VK_CHECK(vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface));
 }
 
 void VulkanManager::initInstance()
@@ -194,8 +232,3 @@ void VulkanManager::initInstance()
     VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance));
 }
 
-
-void VulkanManager::shutDown()
-{
-
-}
