@@ -51,16 +51,6 @@ void Win32Window::destroy()
     //Windows are destroyed automatically by the OS once the program exits.
 }
 
-VkExtent2D Win32Window::getVkDimensions()
-{
-    RECT rect{};
-    VkExtent2D extent{};
-
-    GetWindowRect(handle, &rect);
-    extent.height = 
-    return rect;
-}
-
 LRESULT CALLBACK Win32Window::windowProc(HWND   hwnd,
                                          UINT   uMsg,
                                          WPARAM wParam,

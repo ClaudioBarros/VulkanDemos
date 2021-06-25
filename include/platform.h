@@ -24,8 +24,6 @@ struct Win32Window
 
 	void init(HINSTANCE hInstance, const std::wstring windowClassName);
 	void destroy();
-
-	VkExtent2D getVkDimensions();
 };
 
 #endif
