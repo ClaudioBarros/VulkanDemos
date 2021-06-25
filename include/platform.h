@@ -7,7 +7,7 @@
  
 struct Win32Window
 {
-	HWND window;
+	HWND handle;
 	HINSTANCE hInstance;
 	std::wstring name;
 
