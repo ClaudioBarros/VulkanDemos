@@ -16,19 +16,26 @@ struct VulkanManager
 	VulkanConfig config;
 
 	VkInstance instance;
+
 	VkSurfaceKHR surface;
+
 	PhysicalDevice physicalDevice;
+
 	LogicalDevice logicalDevice;
+
+	Swapchain swapchain;
+	
+
 
 	VulkanManager(){} //do nothing
 	~VulkanManager(){} //do nothing
 
-	void startUp(Win32Window &window, VulkanConfig config);
+	void startUp(Win32Window *window, VulkanConfig config);
 	void shutDown();
 
 	void initInstance();
-	void initSurface(Win32Window &window);
-	void initPhysicalDevice();
+	void initSurface(Win32Window *window);
+	void initPhysicalDevice(VkPhysicalDeviceFeatures featuresToEnable);
 };
 
 struct VulkanConfig
@@ -45,7 +52,7 @@ struct PhysicalDevice
 {
 	VkPhysicalDevice device;
 	VkPhysicalDeviceProperties properties;
-	VkPhysicalDeviceFeatures supportedfeatures;
+	VkPhysicalDeviceFeatures supportedFeatures;
 	VkPhysicalDeviceFeatures enabledFeatures;
 	VkPhysicalDeviceMemoryProperties memProperties;
 
@@ -163,12 +170,30 @@ struct LogicalDevice
 	}
 };
 
+struct SwapchainImageResources 
+{
+    VkImage image;
+    VkCommandBuffer cmd;
+    VkCommandBuffer graphics_to_present_cmd;
+    VkImageView view;
+    VkBuffer uniform_buffer;
+    VkDeviceMemory uniform_memory;
+    void *uniform_memory_ptr;
+    VkFramebuffer framebuffer;
+    VkDescriptorSet descriptor_set;
+};
+
 struct Swapchain
 {
 	VkSwapchainKHR swapchain;
 	VkSurfaceCapabilitiesKHR surfaceCapabilities;	
 	std::vector<VkSurfaceFormatKHR> surfaceFormats;
 	std::vector<VkPresentModeKHR> presentModes;
+	VkSurfaceFormatKHR surfaceFormat;
+	VkPresentModeKHR presentMode;
+	VkExtent2D imageExtent;
+
+	std::vector<SwapchainImageResources> imageResources;
 
 	private:
 
@@ -214,11 +239,173 @@ struct Swapchain
         }
 	}
 
+	void chooseSettings(VkSurfaceFormatKHR preferredFormat,
+						VkPresentModeKHR preferredPresentMode,
+						uint32 width, uint32 height)
+    {
+		//select surface format:
+		bool wasSelected = false;
+		for(VkSurfaceFormatKHR f : surfaceFormats)
+		{
+			if((f.format == preferredFormat.format ) && 
+				(f.colorSpace == preferredFormat.colorSpace))
+			{
+				surfaceFormat = f;
+				wasSelected = true;
+				break;
+			}
+		}
+		//if the preferred format isn't available, choose the first one on the array.
+		//TODO: find a better way to choose another format.
+		if(!wasSelected) 
+		{
+			surfaceFormat = surfaceFormats[0];
+			LOGI("Preferred swapchain format isn't available. "
+			     "VK_PRESENT_MODE_FIFO_KHR selected instead");
+		}
+
+		//select present mode:
+		wasSelected = false;
+		for(VkPresentModeKHR mode : presentModes)
+		{
+			//select triple buffering if available
+			if(mode == preferredPresentMode)
+			{
+				presentMode = mode;
+				wasSelected = true;
+				break;
+			}
+		}
+		if(!wasSelected)
+		{
+			//this mode is guaranteed to be available
+			presentMode = VK_PRESENT_MODE_FIFO_KHR; 
+			LOGI("Preferred swapchain present mode isn't available. "
+			     "VK_PRESENT_MODE_FIFO_KHR selected instead");
+		}
+	
+		//select image extent
+		if(surfaceCapabilities.currentExtent.width != 0xFFFFFFFF)
+		{
+			//if the surface size is defined (other than 0xFFFFFFFF), the swapchain size must match.
+			imageExtent = surfaceCapabilities.currentExtent;
+		}
+		else
+		{
+			//if the surface size is undefined, the size should be set to the size of the requested
+			//images, which should fit within the minimum and maximum values 
+
+			imageExtent.width = width;
+			imageExtent.height = height;
+
+			if(width < surfaceCapabilities.minImageExtent.width)
+			{
+				imageExtent.width = surfaceCapabilities.minImageExtent.width;
+			}
+			else if(width > surfaceCapabilities.maxImageExtent.width)
+			{
+				imageExtent.width = surfaceCapabilities.maxImageExtent.width;
+			}
+
+			if(height < surfaceCapabilities.minImageExtent.height)
+			{
+				imageExtent.height = surfaceCapabilities.minImageExtent.height;
+			}
+			else if(height > surfaceCapabilities.maxImageExtent.height)
+			{
+				imageExtent.height = surfaceCapabilities.maxImageExtent.height;
+			}
+		}
+    }
+
+	void createSwapchainAndImageResources(VkSurfaceKHR surface, 
+						 VkDevice logicalDevice)
+	{
+		VkSwapchainKHR oldSwapchain = swapchain;
+        uint32 desiredNumImages = 3; //3 for triple-buffering
+
+        if(desiredNumImages < surfaceCapabilities.minImageCount)
+        {
+            desiredNumImages = surfaceCapabilities.minImageCount;
+        }
+        if((surfaceCapabilities.maxImageCount > 0) && (desiredNumImages > surfaceCapabilities.maxImageCount))
+        {
+            //maxImageCount = 0 means there is no maximum
+            desiredNumImages = surfaceCapabilities.maxImageCount;
+        }
+
+        VkSwapchainCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        createInfo.surface = surface;
+        createInfo.minImageCount = desiredNumImages;
+        createInfo.imageFormat = surfaceFormat.format;
+        createInfo.imageColorSpace = surfaceFormat.colorSpace;
+        createInfo.imageExtent = imageExtent;
+        createInfo.imageArrayLayers = 1;
+        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		createInfo.queueFamilyIndexCount = 0; //optional
+		createInfo.pQueueFamilyIndices = nullptr; //optional
+        createInfo.preTransform = surfaceCapabilities.currentTransform;
+        createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        createInfo.presentMode = presentMode;
+        createInfo.oldSwapchain = oldSwapchain;
+        createInfo.clipped = VK_TRUE;
+
+        VK_CHECK(vkCreateSwapchainKHR(logicalDevice, &createInfo, nullptr, &swapchain));
+
+		
+		// destroy the old swapchain if we are recreating the swapchain
+		// Note: destroying the swapchain also cleans up all its associated
+		// presentable images once the platform is done with them.
+		if(oldSwapchain != VK_NULL_HANDLE)
+		{
+			vkDestroySwapchainKHR(logicalDevice, oldSwapchain, NULL);
+		}
+
+		uint32 imageCount = 0;
+		std::vector<VkImage> swapchainImages;
+        vkGetSwapchainImagesKHR(logicalDevice, swapchain, &imageCount, nullptr);
+        swapchainImages.resize(imageCount);
+		imageResources.resize(imageCount);
+        VK_CHECK(vkGetSwapchainImagesKHR(logicalDevice, swapchain, &imageCount, swapchainImages.data()));
+
+		for(uint32 i = 0; i < imageCount; i++)
+        {
+            VkImageViewCreateInfo imageViewCreateInfo{};
+            imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            imageViewCreateInfo.image = swapchainImages[i];
+            imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            imageViewCreateInfo.format = surfaceFormat.format;
+
+            imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+            imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+            imageViewCreateInfo.subresourceRange.levelCount = 1;
+            imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+            imageViewCreateInfo.subresourceRange.layerCount = 1;
+            
+			imageResources[i].image = swapchainImages[i];
+            VK_CHECK(vkCreateImageView(logicalDevice,
+			                     	   &imageViewCreateInfo, 
+								       nullptr,
+								       &imageResources[i].view));
+        }
+	}
+
 	public:
 
-	void init()
+ 	void init(VkPhysicalDevice physicalDevice,  
+	 		  VkDevice logicalDevice,
+			  VkSurfaceKHR surface,
+			  VkSurfaceFormatKHR preferredFormat,
+			  uint32 surfaceWidth, uint32 surfaceHeight)
 	{
-
+		querySupportInfo(physicalDevice, surface);
 	}
 
 	void destroy()

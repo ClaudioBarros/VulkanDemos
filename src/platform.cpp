@@ -19,14 +19,13 @@ void Win32Window::init(HINSTANCE hInstance, const std::wstring windowClassName)
     // Register window class:
     if (!RegisterClassEx(&windowClass)) 
 	{
-		LOGE("Unable to register Win32 Window Class.");
-        exit(1);
+		LOGE_EXIT("Unable to register Win32 Window Class.");
     }
 
     RECT wr = {0, 0, this->width, this->height};
     AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
 
-    this->window = CreateWindowEx(0,
+    this->handle = CreateWindowEx(0,
                                   windowClassName.data(),           // window class name 
                                   windowClassName.data(), 			// window text 
                                   WS_OVERLAPPEDWINDOW | WS_VISIBLE, // window style
@@ -37,10 +36,9 @@ void Win32Window::init(HINSTANCE hInstance, const std::wstring windowClassName)
                                   0,               			        // handle to menu
                                   this->hInstance,    			    // hInstance
                                   0);               				// no extra parameters
-    if (!this->window)
+    if (!this->handle)
 	{
-        LOGE("Unable to create a Win32 Window.");
-        exit(1);
+        LOGE_EXIT("Unable to create a Win32 Window.");
     }
 
     // Window client area size must be at least 1 pixel high to prevent crashes.
@@ -53,10 +51,20 @@ void Win32Window::destroy()
     //Windows are destroyed automatically by the OS once the program exits.
 }
 
+VkExtent2D Win32Window::getVkDimensions()
+{
+    RECT rect{};
+    VkExtent2D extent{};
+
+    GetWindowRect(handle, &rect);
+    extent.height = 
+    return rect;
+}
+
 LRESULT CALLBACK Win32Window::windowProc(HWND   hwnd,
-									UINT   uMsg,
-									WPARAM wParam,
-									LPARAM lParam)
+                                         UINT   uMsg,
+                                         WPARAM wParam,
+                                         LPARAM lParam)
 {
     LRESULT result = 0;
 
@@ -64,7 +72,7 @@ LRESULT CALLBACK Win32Window::windowProc(HWND   hwnd,
     {
         default:
         {
-            result = DefWindowProcA(hWindow, uMsg, wParam, lParam);
+            result = DefWindowProcA(hwnd, uMsg, wParam, lParam);
         }
     }
     return result;
