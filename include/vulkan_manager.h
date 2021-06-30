@@ -27,6 +27,13 @@ struct VulkanManager
 	
 	VkRenderPass renderPass;
 
+	VkCommandPool cmdPool;
+	VkCommandBuffer cmdBuffer; //used for initialization
+
+	Depth depth;
+
+	std::vector<Texture> textures;
+	Texture stagingTexture;
 
 	VulkanManager(){} //do nothing
 	~VulkanManager(){} //do nothing
@@ -38,6 +45,30 @@ struct VulkanManager
 	void initSurface(Win32Window *window);
 	void initPhysicalDevice(VkPhysicalDeviceFeatures featuresToEnable);
 	void initRenderPass();
+	void initCmdPool();
+	void initDepthImage();
+	void initDepthImage(VkFormat depthFormat, uint32 width, uint32 height);
+	
+	void initBuffer(VkDeviceSize size, 
+					VkBufferUsageFlags usageFlags, 
+					VkMemoryPropertyFlags propertyFlags,
+					VkBuffer &buffer, 
+					VkDeviceMemory &bufferMemory);
+					
+	void initImage(uint32 width, uint32 height,
+				   VkFormat format, VkImageTiling tiling, 
+				   VkImageUsageFlags usage, VkMemoryPropertyFlags propertyFlags, 
+				   VkImage &image, VkDeviceMemory &imageMemory);
+
+	void setImageLayout(VkImage image, 
+					    VkImageAspectFlags aspectMask,
+						VkImageLayout oldLayout, 
+						VkImageLayout newLayout, 
+						VkAccessFlagBits srcAccessMask, 
+						VkPipelineStageFlags srcStages, 
+						VkPipelineStageFlags destStages);
+
+	void initTextures();
 };
 
 struct VulkanConfig
@@ -55,9 +86,37 @@ struct VulkanConfig
 
 	//depth buffer
 	VkFormat preferredDepthFormat;
+
+	//textures
+	VkFormat texFormat;
+	uint32 texCount;
+	std::vector<std::string> texFiles;
 	
 	std::vector<const char*> validationLayers;
 	std::vector<const char*> deviceExtensions;
+};
+
+struct Depth
+{
+	VkFormat format;
+	VkImage image;
+	VkMemoryAllocateInfo memAlloc;
+	VkDeviceMemory mem;
+	VkImageView view;
+};
+
+struct Texture
+{
+    VkSampler sampler;
+
+    VkImage image;
+    VkBuffer buffer;
+    VkImageLayout imageLayout;
+
+    VkMemoryAllocateInfo memAlloc;
+    VkDeviceMemory mem;
+    VkImageView view;
+    int32 width, height;
 };
 
 struct PhysicalDevice
@@ -139,5 +198,9 @@ struct Swapchain
 
 	void destroy();
 };
+
+uint32 findMemoryTypeFromProperties(const VkPhysicalDeviceMemoryProperties *pMemoryProperties,
+                                    uint32 memoryTypeBitsRequired, 
+                                    VkMemoryPropertyFlags requiredProperties);
 
 #endif

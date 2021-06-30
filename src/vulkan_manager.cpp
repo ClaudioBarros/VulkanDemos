@@ -1,9 +1,12 @@
 #include "vulkan_manager.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 /*
 TODO LIST:
             -swapchain destruction
-            -swapchain recreation 
+            -swapchain recreation
+            -depth buffer 
 */
 
 void VulkanManager::startUp(Win32Window *window, VulkanConfig vulkanConfig)
@@ -35,8 +38,9 @@ void VulkanManager::startUp(Win32Window *window, VulkanConfig vulkanConfig)
                    config.preferredPresentMode,
                    window->width, window->height);
 
-    //TODO: SWAPCHAIN 
-    createRenderPass();
+    initRenderPass();
+
+    initCmdPool();
     createDescriptorSetLayout();
     createGraphicsPipeline();
     createCommandPool();
@@ -281,6 +285,288 @@ void VulkanManager::initRenderPass()
     VK_CHECK(vkCreateRenderPass(logicalDevice.device, &renderPassCreateInfo, nullptr, &renderPass));
 }
 
+void VulkanManager::initCmdPool()
+{
+    VkCommandPoolCreateInfo cmdPoolInfo{};
+    cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cmdPoolInfo.pNext = nullptr;
+    cmdPoolInfo.queueFamilyIndex = physicalDevice.graphicsQueueFamilyIndex;
+    cmdPoolInfo.flags = 0;
+
+    VK_CHECK(vkCreateCommandPool(logicalDevice.device, &cmdPoolInfo, nullptr, &cmdPool));
+}
+
+uint32 findMemoryTypeFromProperties(const VkPhysicalDeviceMemoryProperties *pMemoryProperties,
+                                    uint32 memoryTypeBitsRequired, 
+                                    VkMemoryPropertyFlags requiredProperties)
+{
+    uint32 memoryCount = pMemoryProperties->memoryTypeCount;
+    for(uint32 memoryIndex = 0; memoryIndex < memoryCount; ++memoryIndex) 
+    {
+        uint32 memoryTypeBits = (1 << memoryIndex);
+        bool isRequiredMemoryType = memoryTypeBitsRequired & memoryTypeBits;
+
+        VkMemoryPropertyFlags properties =
+            pMemoryProperties->memoryTypes[memoryIndex].propertyFlags;
+        bool hasRequiredProperties =
+            (properties & requiredProperties) == requiredProperties;
+
+        if (isRequiredMemoryType && hasRequiredProperties)
+            return memoryIndex;
+    }
+
+    LOGE_EXIT("Unable to find suitable memory type from the given properties.");
+}
+
+
+void VulkanManager::initDepthBuffer(VkFormat depthFormat, uint32 width, uint32 height)
+{
+    //--- create image --- 
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = depthFormat;
+    imageInfo.extent = {width, height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    VK_CHECK(vkCreateImage(logicalDevice.device, &imageInfo, nullptr, &depth.image));
+
+    VkMemoryRequirements memReqs;
+    vkGetImageMemoryRequirements(logicalDevice.device, depth.image, &memReqs);
+
+    depth.memAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    depth.memAlloc.pNext = nullptr;
+    depth.memAlloc.allocationSize = memReqs.size;
+    depth.memAlloc.memoryTypeIndex = findMemoryTypeFromProperties(&physicalDevice.memProperties,
+                                                                  memReqs.memoryTypeBits,
+                                                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    // --- allocate memory ---
+    VK_CHECK(vkAllocateMemory(logicalDevice.device, &depth.memAlloc, nullptr, &depth.mem));
+
+    // --- bind memory ---
+    VK_CHECK(vkBindImageMemory(logicalDevice.device, depth.image, depth.mem, 0));
+
+    // --- create image view ---
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = depth.image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = depthFormat;
+
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    VK_CHECK(vkCreateImageView(logicalDevice.device, &viewInfo, nullptr, &depth.view));
+}
+
+void VulkanManager::initBuffer(VkDeviceSize size, 
+                               VkBufferUsageFlags usageFlags, 
+                               VkMemoryPropertyFlags propertyFlags,
+                               VkBuffer &buffer, 
+                               VkDeviceMemory &bufferMemory)
+{
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = usageFlags;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VK_CHECK(vkCreateBuffer(logicalDevice.device, &bufferInfo, nullptr, &buffer));
+
+    //memory allocation for the buffer:
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(logicalDevice.device, buffer, &memReqs);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = findMemoryTypeFromProperties(&physicalDevice.memProperties,
+                                                             memReqs.memoryTypeBits,
+                                                             propertyFlags);
+
+    VK_CHECK(vkAllocateMemory(logicalDevice.device, &allocInfo, nullptr, &bufferMemory));
+
+    VK_CHECK(vkBindBufferMemory(logicalDevice.device, buffer, bufferMemory, 0));
+}
+
+void VulkanManager::initImage(uint32 width, uint32 height,
+                              VkFormat format, VkImageTiling tiling, 
+                              VkImageUsageFlags usage, VkMemoryPropertyFlags propertyFlags, 
+                              VkImage &image, VkDeviceMemory &imageMemory)
+{
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = width;
+    imageInfo.extent.height = height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = format;
+    imageInfo.tiling = tiling;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = usage;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VK_CHECK(vkCreateImage(logicalDevice.device, &imageInfo, nullptr, &image));
+
+    VkMemoryRequirements memReqs;
+    vkGetImageMemoryRequirements(logicalDevice.device, image, &memReqs);
+     
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = findMemoryTypeFromProperties(&physicalDevice.memProperties,
+                                                              memReqs.memoryTypeBits,
+                                                              propertyFlags);
+
+    VK_CHECK(vkAllocateMemory(logicalDevice.device, &allocInfo, nullptr, &imageMemory));
+
+    VK_CHECK(vkBindImageMemory(logicalDevice.device, image, imageMemory, 0));
+}
+
+void VulkanManager::setImageLayout(VkImage image, 
+                                   VkImageAspectFlags aspectMask,
+                                   VkImageLayout oldLayout, 
+                                   VkImageLayout newLayout, 
+                                   VkAccessFlagBits srcAccessMask, 
+                                   VkPipelineStageFlags srcStages, 
+                                   VkPipelineStageFlags destStages) 
+{
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.pNext = NULL;
+    barrier.srcAccessMask = srcAccessMask;
+    barrier.dstAccessMask = 0;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    switch (newLayout) {
+        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+            /* Make sure anything that was copying from this image has completed */
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            break;
+
+        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+            barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            break;
+
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+            barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            break;
+
+        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+            break;
+
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            break;
+
+        case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+            barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+            break;
+
+        default:
+            barrier.dstAccessMask = 0;
+            break;
+    }
+
+    vkCmdPipelineBarrier(cmdBuffer, srcStages, destStages, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+}
+
+void VulkanManager::initTextures()
+{
+    for(uint32 i = 0; i < config.texCount; i++)
+    {
+        int texWidth, texHeight, texChannels;
+        stbi_uc* pixels = stbi_load(config.texFiles[i].c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        
+        //4 bytes per pixel;
+        VkDeviceSize imgSize = texWidth * texHeight * 4;
+
+        if(!pixels)
+        {
+            LOGE_EXIT("Unable to load texture image.");
+        }
+
+        initBuffer(imgSize,
+                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                   stagingTexture.buffer, 
+                   stagingTexture.mem); 
+
+        void *data;
+        vkMapMemory(logicalDevice.device, stagingTexture.mem, 0, imgSize, 0, &data);
+        memcpy(data, pixels, (size_t)(imgSize));
+        vkUnmapMemory(logicalDevice.device, stagingTexture.mem);
+
+        stbi_image_free(pixels);
+
+        initImage(texWidth, texHeight,
+                  VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
+                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textures[i].image, textures[i].mem);
+
+        setImageLayout(textures[i].image,
+                       VK_IMAGE_ASPECT_COLOR_BIT,
+                       VK_IMAGE_LAYOUT_UNDEFINED,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+                       VK_ACCESS_NONE_KHR,
+                       VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+        VkBufferImageCopy copyRegion{};
+        copyRegion.bufferOffset = 0; 
+        copyRegion.bufferRowLength = 0; //means texture is tighly packed
+        copyRegion.bufferImageHeight = 0; //means texture is tighly packed
+        copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copyRegion.imageSubresource.mipLevel = 0;
+        copyRegion.imageSubresource.baseArrayLayer = 0;
+        copyRegion.imageSubresource.layerCount = 1;
+
+        copyRegion.imageOffset = {0, 0, 0};
+        copyRegion.imageExtent = {(uint32)texWidth, (uint32)texHeight, 1};
+
+    
+        vkCmdCopyBufferToImage(cmdBuffer, 
+                               stagingTexture.buffer, 
+                               textures[i].image, 
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               1,
+                               &copyRegion);
+
+        setImageLayout(textures[i].image,
+                       VK_IMAGE_ASPECT_COLOR_BIT,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       textures[i].imageLayout, 
+                       VK_ACCESS_TRANSFER_WRITE_BIT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    }
+
+    //TODO: create sampler
+}
+
 //==================================== PhysicalDevice ===================================
 
 void PhysicalDevice::init(VkPhysicalDevice physicalDevice, 
@@ -382,6 +668,8 @@ void LogicalDevice::destroy()
 {
     vkDestroyDevice(device, nullptr);
 }
+
+//=================================== Texture =========================================
 
 //=================================== Swapchain =========================================
 void Swapchain::querySupportInfo(VkPhysicalDevice physicalDevice,  
