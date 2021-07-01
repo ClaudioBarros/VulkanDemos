@@ -163,9 +163,6 @@ void VulkanManager::initInstance()
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
 
-    uint32 glfwExtensionCount = 0;
-    const char** glfwExtensions;
-
     createInfo.enabledExtensionCount = (uint32)(config.deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = config.deviceExtensions.data();
 
@@ -319,7 +316,7 @@ uint32 findMemoryTypeFromProperties(const VkPhysicalDeviceMemoryProperties *pMem
 }
 
 
-void VulkanManager::initDepthBuffer(VkFormat depthFormat, uint32 width, uint32 height)
+void VulkanManager::initDepthImage(VkFormat depthFormat, uint32 width, uint32 height)
 {
     //--- create image --- 
 
@@ -494,77 +491,113 @@ void VulkanManager::setImageLayout(VkImage image,
     vkCmdPipelineBarrier(cmdBuffer, srcStages, destStages, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-void VulkanManager::initTextures()
+void VulkanManager::initTexture(std::string filepath, Texture &texture)
 {
-    for(uint32 i = 0; i < config.texCount; i++)
-    {
-        int texWidth, texHeight, texChannels;
-        stbi_uc* pixels = stbi_load(config.texFiles[i].c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-        
-        //4 bytes per pixel;
-        VkDeviceSize imgSize = texWidth * texHeight * 4;
-
-        if(!pixels)
-        {
-            LOGE_EXIT("Unable to load texture image.");
-        }
-
-        initBuffer(imgSize,
-                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                   stagingTexture.buffer, 
-                   stagingTexture.mem); 
-
-        void *data;
-        vkMapMemory(logicalDevice.device, stagingTexture.mem, 0, imgSize, 0, &data);
-        memcpy(data, pixels, (size_t)(imgSize));
-        vkUnmapMemory(logicalDevice.device, stagingTexture.mem);
-
-        stbi_image_free(pixels);
-
-        initImage(texWidth, texHeight,
-                  VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
-                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
-                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textures[i].image, textures[i].mem);
-
-        setImageLayout(textures[i].image,
-                       VK_IMAGE_ASPECT_COLOR_BIT,
-                       VK_IMAGE_LAYOUT_UNDEFINED,
-                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
-                       VK_ACCESS_NONE_KHR,
-                       VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                       VK_PIPELINE_STAGE_TRANSFER_BIT);
-
-        VkBufferImageCopy copyRegion{};
-        copyRegion.bufferOffset = 0; 
-        copyRegion.bufferRowLength = 0; //means texture is tighly packed
-        copyRegion.bufferImageHeight = 0; //means texture is tighly packed
-        copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        copyRegion.imageSubresource.mipLevel = 0;
-        copyRegion.imageSubresource.baseArrayLayer = 0;
-        copyRegion.imageSubresource.layerCount = 1;
-
-        copyRegion.imageOffset = {0, 0, 0};
-        copyRegion.imageExtent = {(uint32)texWidth, (uint32)texHeight, 1};
-
+    int texWidth, texHeight, texChannels;
+    stbi_uc* pixels = stbi_load(filepath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     
-        vkCmdCopyBufferToImage(cmdBuffer, 
-                               stagingTexture.buffer, 
-                               textures[i].image, 
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                               1,
-                               &copyRegion);
+    //4 bytes per pixel;
+    VkDeviceSize imgSize = texWidth * texHeight * 4;
 
-        setImageLayout(textures[i].image,
-                       VK_IMAGE_ASPECT_COLOR_BIT,
-                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       textures[i].imageLayout, 
-                       VK_ACCESS_TRANSFER_WRITE_BIT,
-                       VK_PIPELINE_STAGE_TRANSFER_BIT,
-                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    if(!pixels)
+    {
+        LOGE_EXIT("Unable to load texture image.");
     }
 
-    //TODO: create sampler
+    initBuffer(imgSize,
+               VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               stagingTexture.buffer, 
+               stagingTexture.mem); 
+
+    void *data;
+    vkMapMemory(logicalDevice.device, stagingTexture.mem, 0, imgSize, 0, &data);
+    memcpy(data, pixels, (size_t)(imgSize));
+    vkUnmapMemory(logicalDevice.device, stagingTexture.mem);
+
+    stbi_image_free(pixels);
+
+    initImage(texWidth, texHeight,
+              config.texFormat, VK_IMAGE_TILING_OPTIMAL,
+              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.image, texture.mem);
+
+    setImageLayout(texture.image,
+                   VK_IMAGE_ASPECT_COLOR_BIT,
+                   VK_IMAGE_LAYOUT_UNDEFINED,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+                   VK_ACCESS_NONE_KHR,
+                   VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                   VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    VkBufferImageCopy copyRegion{};
+    copyRegion.bufferOffset = 0; 
+    copyRegion.bufferRowLength = 0; //means texture is tighly packed
+    copyRegion.bufferImageHeight = 0; //means texture is tighly packed
+    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.imageSubresource.mipLevel = 0;
+    copyRegion.imageSubresource.baseArrayLayer = 0;
+    copyRegion.imageSubresource.layerCount = 1;
+
+    copyRegion.imageOffset = {0, 0, 0};
+    copyRegion.imageExtent = {(uint32)texWidth, (uint32)texHeight, 1};
+
+
+    vkCmdCopyBufferToImage(cmdBuffer, 
+                           stagingTexture.buffer, 
+                           texture.image, 
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           1,
+                           &copyRegion);
+
+    setImageLayout(texture.image,
+                   VK_IMAGE_ASPECT_COLOR_BIT,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   texture.imageLayout, 
+                   VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_PIPELINE_STAGE_TRANSFER_BIT,
+                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    //--- sampler ---
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+    samplerInfo.anisotropyEnable = VK_TRUE;
+    samplerInfo.maxAnisotropy = physicalDevice.properties.limits.maxSamplerAnisotropy;
+
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    //--- image view ----
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = texture.image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = config.texFormat;
+
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+    
+    VK_CHECK(vkCreateSampler(logicalDevice.device, &samplerInfo, nullptr, &texture.sampler));
+    VK_CHECK(vkCreateImageView(logicalDevice.device, &viewInfo, nullptr, &texture.view));
 }
 
 //==================================== PhysicalDevice ===================================

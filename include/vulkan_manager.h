@@ -68,7 +68,7 @@ struct VulkanManager
 						VkPipelineStageFlags srcStages, 
 						VkPipelineStageFlags destStages);
 
-	void initTextures();
+	void initTexture(std::string filepath, Texture &texture);
 };
 
 struct VulkanConfig
