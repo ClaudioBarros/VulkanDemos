@@ -1,7 +1,5 @@
 #include "vulkan_manager.h"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 /*
 TODO LIST:
             -swapchain destruction
@@ -41,21 +39,6 @@ void VulkanManager::startUp(Win32Window *window, VulkanConfig vulkanConfig)
     initRenderPass();
 
     initCmdPool();
-    createDescriptorSetLayout();
-    createGraphicsPipeline();
-    createCommandPool();
-    createDepthResources();
-    createFramebuffers();
-    createTextureImage();
-    createTextureImageView();
-    createTextureSampler();
-    createVertexBuffer();
-    createIndexBuffer();
-    createUniformBuffers();
-    createDescriptorPool();
-    createDescriptorSets();
-    createCommandBuffers();
-    createSyncPrimitives();
 
 }
 
@@ -293,6 +276,17 @@ void VulkanManager::initCmdPool()
     VK_CHECK(vkCreateCommandPool(logicalDevice.device, &cmdPoolInfo, nullptr, &cmdPool));
 }
 
+void allocPrimaryCmdBuffer(VkDevice device, VkCommandPool &cmdPool, VkCommandBuffer &cmdBuffer)
+{
+    VkCommandBufferAllocateInfo cmdAllocInfo{};
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandPool = cmdPool;
+    cmdAllocInfo.commandBufferCount = 1;
+    
+    VK_CHECK(vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmdBuffer));
+}
+
 uint32 findMemoryTypeFromProperties(const VkPhysicalDeviceMemoryProperties *pMemoryProperties,
                                     uint32 memoryTypeBitsRequired, 
                                     VkMemoryPropertyFlags requiredProperties)
@@ -491,31 +485,31 @@ void VulkanManager::setImageLayout(VkImage image,
     vkCmdPipelineBarrier(cmdBuffer, srcStages, destStages, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-void VulkanManager::initTexture(std::string filepath, Texture &texture)
+void VulkanManager::initVulkanTexture(uint8 *texPixels, 
+                                      uint32 texWidth,
+                                      uint32 texHeight,
+                                      VkBuffer &stagingBuffer, 
+                                      VkDeviceMemory &stagingBufferMemory, 
+                                      VulkanTexture &texture)
 {
-    int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load(filepath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    
     //4 bytes per pixel;
     VkDeviceSize imgSize = texWidth * texHeight * 4;
 
-    if(!pixels)
+    if(!texPixels)
     {
-        LOGE_EXIT("Unable to load texture image.");
+        LOGE_EXIT("Unable to initialize Vulkan Texture. parameter texPixels was nullptr.");
     }
 
     initBuffer(imgSize,
                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-               stagingTexture.buffer, 
-               stagingTexture.mem); 
+               stagingBuffer, 
+               stagingBufferMemory); 
 
     void *data;
-    vkMapMemory(logicalDevice.device, stagingTexture.mem, 0, imgSize, 0, &data);
-    memcpy(data, pixels, (size_t)(imgSize));
-    vkUnmapMemory(logicalDevice.device, stagingTexture.mem);
-
-    stbi_image_free(pixels);
+    vkMapMemory(logicalDevice.device, stagingBufferMemory, 0, imgSize, 0, &data);
+    memcpy(data, texPixels, (size_t)(imgSize));
+    vkUnmapMemory(logicalDevice.device, stagingBufferMemory);
 
     initImage(texWidth, texHeight,
               config.texFormat, VK_IMAGE_TILING_OPTIMAL,
@@ -544,7 +538,7 @@ void VulkanManager::initTexture(std::string filepath, Texture &texture)
 
 
     vkCmdCopyBufferToImage(cmdBuffer, 
-                           stagingTexture.buffer, 
+                           stagingBuffer, 
                            texture.image, 
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            1,
@@ -702,8 +696,6 @@ void LogicalDevice::destroy()
     vkDestroyDevice(device, nullptr);
 }
 
-//=================================== Texture =========================================
-
 //=================================== Swapchain =========================================
 void Swapchain::querySupportInfo(VkPhysicalDevice physicalDevice,  
                                  VkSurfaceKHR surface)
@@ -720,9 +712,9 @@ void Swapchain::querySupportInfo(VkPhysicalDevice physicalDevice,
         surfaceFormats.resize(surfaceFormatCount);
 
         vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice,
-                                                surface,
-                                                &surfaceFormatCount,
-                                                surfaceFormats.data());
+                                             surface,
+                                             &surfaceFormatCount,
+                                             surfaceFormats.data());
     }
     else
     {
@@ -737,9 +729,9 @@ void Swapchain::querySupportInfo(VkPhysicalDevice physicalDevice,
         presentModes.resize(presentModeCount);
 
         vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice,
-                                            surface,
-                                            &presentModeCount,
-                                            presentModes.data());
+                                                  surface,
+                                                  &presentModeCount,
+                                                  presentModes.data());
     }
     else
     {
@@ -914,7 +906,6 @@ void Swapchain::init(VkPhysicalDevice physicalDevice,
 {
     querySupportInfo(physicalDevice, surface);
     chooseSettings(preferredFormat, preferredPresentMode, surfaceWidth, surfaceHeight);
-    createSwapchainAndImageResources(surface, logicalDevice);
 }
 
 void Swapchain::destroy()

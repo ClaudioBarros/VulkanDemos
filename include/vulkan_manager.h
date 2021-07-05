@@ -32,9 +32,6 @@ struct VulkanManager
 
 	Depth depth;
 
-	std::vector<Texture> textures;
-	Texture stagingTexture;
-
 	VulkanManager(){} //do nothing
 	~VulkanManager(){} //do nothing
 
@@ -68,9 +65,16 @@ struct VulkanManager
 						VkPipelineStageFlags srcStages, 
 						VkPipelineStageFlags destStages);
 
-	void initTexture(std::string filepath, Texture &texture);
+	void initVulkanTexture(uint8 *texPixels, 
+						   uint32 texWidth,
+						   uint32 texHeight,
+						   VkBuffer &stagingBuffer, 
+						   VkDeviceMemory &stagingBufferMemory, 
+						   VulkanTexture &texture);
 };
 
+// STRUCTS AND HELPER FUNCTIONS 
+//==================== Vulkan Config ======================
 struct VulkanConfig
 {
 	std::string appName;
@@ -105,7 +109,8 @@ struct Depth
 	VkImageView view;
 };
 
-struct Texture
+// ========================= Vulkan Texture ====================
+struct VulkanTexture
 {
     VkSampler sampler;
 
@@ -119,6 +124,8 @@ struct Texture
     int32 width, height;
 };
 
+
+// ========================= Physical Device =========================
 struct PhysicalDevice
 {
 	VkPhysicalDevice device;
@@ -138,6 +145,10 @@ struct PhysicalDevice
 	void destroy();
 };
 
+uint32 findMemoryTypeFromProperties(const VkPhysicalDeviceMemoryProperties *pMemoryProperties,
+                                    uint32 memoryTypeBitsRequired, 
+                                    VkMemoryPropertyFlags requiredProperties);
+// ======================== Logical Device ==========================
 struct LogicalDevice
 {
 	VkDevice device;
@@ -150,6 +161,7 @@ struct LogicalDevice
 	void destroy();
 };
 
+// ========================= Swapchain ============================
 struct SwapchainImageResources 
 {
     VkImage image;
@@ -184,8 +196,6 @@ struct Swapchain
 						VkPresentModeKHR preferredPresentMode,
 						uint32 width, uint32 height);
 
-	void createSwapchainAndImageResources(VkSurfaceKHR surface, 
-						 VkDevice logicalDevice);
 
 	public:
 
@@ -195,12 +205,17 @@ struct Swapchain
 			  VkSurfaceFormatKHR preferredFormat,
 			  VkPresentModeKHR preferredPresentMode,
 			  uint32 surfaceWidth, uint32 surfaceHeight);
+	
+	void createSwapchainAndImageResources(VkSurfaceKHR surface, VkDevice logicalDevice);
 
 	void destroy();
 };
 
-uint32 findMemoryTypeFromProperties(const VkPhysicalDeviceMemoryProperties *pMemoryProperties,
-                                    uint32 memoryTypeBitsRequired, 
-                                    VkMemoryPropertyFlags requiredProperties);
+//==================================================================
+
+void allocPrimaryCmdBuffer(VkDevice device, VkCommandPool &cmdPool, VkCommandBuffer &cmdBuffer);
+
+
+
 
 #endif

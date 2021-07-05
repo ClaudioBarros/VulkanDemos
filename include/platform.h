@@ -10,10 +10,10 @@ struct Win32Window
 	HWND handle;
 	HINSTANCE hInstance;
 	std::wstring name;
-
+	
 	uint32 width;
 	uint32 height;
-	
+		
 	uint32 minX;
 	uint32 minY;
 
