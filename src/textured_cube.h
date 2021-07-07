@@ -8,6 +8,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <glm/glm.hpp>
+
 struct Demo
 {
 	Win32Window window;
@@ -22,13 +24,17 @@ struct Demo
 	std::vector<VulkanTexture> vulkanTextures;
 	VulkanTexture stagingTexture;
 
-	Demo() {}
-	~Demo() {}
+	Demo(){}
+	~Demo(){}
 
 	void startUp();
 	void shutDown();
 
 	void prepare();
+	void initCubeDataBuffers();
+	void initDescriptorLayout();
+	void initRenderPass();
+	void initPipeline();
 };
 
 struct Texture
@@ -40,7 +46,15 @@ struct Texture
 
 	void load(std::string filepath);
 	void free(); 
-}
+};
 
+struct VS_UBO 
+{
+	alignas(16) glm::mat4 mvp;
+	alignas(16) glm::vec4 pos;
+	alignas(16) glm::vec2 uv;
+};
+
+void loadShaderModule(std::string &filename, std::vector<char> &buffer);
 
 #endif 

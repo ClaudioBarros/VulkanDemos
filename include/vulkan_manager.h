@@ -28,7 +28,14 @@ struct VulkanManager
 	VkRenderPass renderPass;
 
 	VkCommandPool cmdPool;
+	VkCommandPool presentCmdPool;
 	VkCommandBuffer cmdBuffer; //used for initialization
+	
+	VkDescriptorSetLayout descriptorSetLayout;
+	
+	VkPipelineLayout pipelineLayout;
+	VkPipelineCache pipelineCache;
+	VkPipeline pipeline;
 
 	Depth depth;
 
@@ -41,7 +48,6 @@ struct VulkanManager
 	void initInstance();
 	void initSurface(Win32Window *window);
 	void initPhysicalDevice(VkPhysicalDeviceFeatures featuresToEnable);
-	void initRenderPass();
 	void initCmdPool();
 	void initDepthImage();
 	void initDepthImage(VkFormat depthFormat, uint32 width, uint32 height);
@@ -185,6 +191,7 @@ struct Swapchain
 	VkPresentModeKHR presentMode;
 	VkExtent2D imageExtent;
 
+	uint32 imageCount;
 	std::vector<SwapchainImageResources> imageResources;
 
 	private:

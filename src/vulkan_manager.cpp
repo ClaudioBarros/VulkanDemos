@@ -162,109 +162,6 @@ void VulkanManager::initInstance()
     VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance));
 }
 
-void VulkanManager::initRenderPass()
-{
-    //Layout transitions:
-    //color attachment: 
-    //      -at the start of the render pass: UNDEFINED -> COLOR_ATTACHMENT_OPTIONAL.
-    //      -at the start of the subpass COLOR_ATTACHMENT_OPTIONAL -> PRESENT_SRC_KHR;
-    //
-    //depth attachment:
-    //      -at the start of the render pass: UNDEFINED -> DEPTH_STENCIL_ATTACHMENT_OPTIONAL.
-    //
-    //NOTE: This is all done as part ofthe renderpass, no barriers are necessary
-
-
-    //color attachment:
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = swapchain.surfaceFormat.format; //must match swapchain format
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; //not multisampled
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; //clear to black at frame start
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; //store the results when the frame ends
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; //not using a stencil buffer
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; //not using a stencil buffer
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; //image layout undefined at render pass start 
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;//transition layout to PRESENT_SRC_KHR 
-                                                                    //when render pass is complete
-
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0; //index of our single attachment
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    //depth attachment:
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format = config.preferredDepthFormat;
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentDescription attachments[] = {colorAttachment, depthAttachment};
-
-    //-------- Subpass -------
-    //There will be a single subpass with a color and a depth attachment.
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-    //need to wait for the Window System Integration semaphore to signal
-    //"Only pipeline stages which depend on COLOR_ATTACHMENT_OUTPUT_BIT will
-    // actually wait for the semaphore, so we must also wait for that pipeline stage."
-    // src: official vulkan samples.
-
-
-    VkSubpassDependency attachmentDependencies[2] = {};
-    //[0]
-    {
-        // Depth buffer is shared between swapchain images
-        attachmentDependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL,
-        attachmentDependencies[0].dstSubpass = 0,
-        attachmentDependencies[0].srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | 
-                                                 VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-
-        attachmentDependencies[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | 
-                                                 VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-
-        attachmentDependencies[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        attachmentDependencies[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | 
-                                                  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        attachmentDependencies[0].dependencyFlags = 0;
-    }
-    //[1]
-    {
-        attachmentDependencies[1].srcSubpass = VK_SUBPASS_EXTERNAL;
-        attachmentDependencies[1].dstSubpass = 0;
-        attachmentDependencies[1].srcStageMask =  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        attachmentDependencies[1].srcAccessMask = 0;
-        attachmentDependencies[1].dstStageMask =  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        attachmentDependencies[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    }
-
-    //create the render pass:
-    VkRenderPassCreateInfo renderPassCreateInfo{};
-    renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassCreateInfo.attachmentCount = (uint32)(sizeof(attachments) / sizeof(attachments[0])); 
-    renderPassCreateInfo.pAttachments = attachments;
-    renderPassCreateInfo.subpassCount = 1;
-    renderPassCreateInfo.pSubpasses = &subpass;
-    renderPassCreateInfo.dependencyCount = 2;
-    renderPassCreateInfo.pDependencies = attachmentDependencies;
-
-    VK_CHECK(vkCreateRenderPass(logicalDevice.device, &renderPassCreateInfo, nullptr, &renderPass));
-}
-
 void VulkanManager::initCmdPool()
 {
     VkCommandPoolCreateInfo cmdPoolInfo{};
@@ -274,17 +171,6 @@ void VulkanManager::initCmdPool()
     cmdPoolInfo.flags = 0;
 
     VK_CHECK(vkCreateCommandPool(logicalDevice.device, &cmdPoolInfo, nullptr, &cmdPool));
-}
-
-void allocPrimaryCmdBuffer(VkDevice device, VkCommandPool &cmdPool, VkCommandBuffer &cmdBuffer)
-{
-    VkCommandBufferAllocateInfo cmdAllocInfo{};
-    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdAllocInfo.commandPool = cmdPool;
-    cmdAllocInfo.commandBufferCount = 1;
-    
-    VK_CHECK(vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmdBuffer));
 }
 
 uint32 findMemoryTypeFromProperties(const VkPhysicalDeviceMemoryProperties *pMemoryProperties,
@@ -863,7 +749,6 @@ void Swapchain::createSwapchainAndImageResources(VkSurfaceKHR surface,
         vkDestroySwapchainKHR(logicalDevice, oldSwapchain, NULL);
     }
 
-    uint32 imageCount = 0;
     std::vector<VkImage> swapchainImages;
     vkGetSwapchainImagesKHR(logicalDevice, swapchain, &imageCount, nullptr);
     swapchainImages.resize(imageCount);
@@ -902,7 +787,7 @@ void Swapchain::init(VkPhysicalDevice physicalDevice,
                      VkSurfaceKHR surface,
                      VkSurfaceFormatKHR preferredFormat,
                      VkPresentModeKHR preferredPresentMode,
-                    uint32 surfaceWidth, uint32 surfaceHeight)
+                     uint32 surfaceWidth, uint32 surfaceHeight)
 {
     querySupportInfo(physicalDevice, surface);
     chooseSettings(preferredFormat, preferredPresentMode, surfaceWidth, surfaceHeight);
