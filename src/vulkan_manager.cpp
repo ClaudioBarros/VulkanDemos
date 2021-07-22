@@ -36,8 +36,6 @@ void VulkanManager::startUp(Win32Window *window, VulkanConfig vulkanConfig)
                    config.preferredPresentMode,
                    window->width, window->height);
 
-    initRenderPass();
-
     initCmdPool();
 
 }
@@ -480,6 +478,13 @@ void VulkanManager::initVulkanTexture(uint8 *texPixels,
     VK_CHECK(vkCreateImageView(logicalDevice.device, &viewInfo, nullptr, &texture.view));
 }
 
+void VulkanManager::freeVulkanTexture(VulkanTexture &tex)
+{
+    vkFreeMemory(logicalDevice.device, tex.mem, nullptr);
+    if(tex.image) vkDestroyImage(logicalDevice.device, tex.image, nullptr);
+    if(tex.buffer) vkDestroyBuffer(logicalDevice.device, tex.buffer, nullptr);
+}
+
 //==================================== PhysicalDevice ===================================
 
 void PhysicalDevice::init(VkPhysicalDevice physicalDevice, 
@@ -522,6 +527,15 @@ void PhysicalDevice::init(VkPhysicalDevice physicalDevice,
         {
             break;
         }
+    }
+    
+    if(graphicsQueueFamilyIndex != presentQueueFamilyIndex)
+    {
+        separatePresentQueue = false;
+    }
+    else
+    {
+        separatePresentQueue = true;
     }
 
 }
@@ -604,7 +618,7 @@ void Swapchain::querySupportInfo(VkPhysicalDevice physicalDevice,
     }
     else
     {
-        LOGE_EXIT("Swapchain is not supported, Surface has no formats.");
+        LOGE_EXIT("Swapchain is not supported. Surface has no formats.");
     }
 
     uint32 presentModeCount;

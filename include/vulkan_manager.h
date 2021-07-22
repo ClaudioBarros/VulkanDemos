@@ -31,7 +31,6 @@ struct VulkanManager
 	VkCommandPool presentCmdPool;
 	VkCommandBuffer cmdBuffer; //used for initialization
 	
-	VkDescriptorSetLayout descriptorSetLayout;
 	
 	VkPipelineLayout pipelineLayout;
 	VkPipelineCache pipelineCache;
@@ -77,6 +76,8 @@ struct VulkanManager
 						   VkBuffer &stagingBuffer, 
 						   VkDeviceMemory &stagingBufferMemory, 
 						   VulkanTexture &texture);
+	
+	void freeVulkanTexture(VulkanTexture &tex);
 };
 
 // STRUCTS AND HELPER FUNCTIONS 
@@ -144,6 +145,8 @@ struct PhysicalDevice
 
 	uint32 graphicsQueueFamilyIndex;
 	uint32 presentQueueFamilyIndex;
+	
+	bool separatePresentQueue;
 
 	void init(VkPhysicalDevice physicalDevice, 
 	          VkSurfaceKHR surface,
