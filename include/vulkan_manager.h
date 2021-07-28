@@ -9,76 +9,7 @@
 #include "platform.h"
 #include "typedefs_and_macros.h"
 
-
-struct VulkanManager
-{
-	Win32Window *window;
-	VulkanConfig config;
-
-	VkInstance instance;
-
-	VkSurfaceKHR surface;
-
-	PhysicalDevice physicalDevice;
-
-	LogicalDevice logicalDevice;
-
-	Swapchain swapchain;
-	
-	VkRenderPass renderPass;
-
-	VkCommandPool cmdPool;
-	VkCommandPool presentCmdPool;
-	VkCommandBuffer cmdBuffer; //used for initialization
-	
-	
-	VkPipelineLayout pipelineLayout;
-	VkPipelineCache pipelineCache;
-	VkPipeline pipeline;
-
-	Depth depth;
-
-	VulkanManager(){} //do nothing
-	~VulkanManager(){} //do nothing
-
-	void startUp(Win32Window *window, VulkanConfig config);
-	void shutDown();
-
-	void initInstance();
-	void initSurface(Win32Window *window);
-	void initPhysicalDevice(VkPhysicalDeviceFeatures featuresToEnable);
-	void initCmdPool();
-	void initDepthImage();
-	void initDepthImage(VkFormat depthFormat, uint32 width, uint32 height);
-	
-	void initBuffer(VkDeviceSize size, 
-					VkBufferUsageFlags usageFlags, 
-					VkMemoryPropertyFlags propertyFlags,
-					VkBuffer &buffer, 
-					VkDeviceMemory &bufferMemory);
-					
-	void initImage(uint32 width, uint32 height,
-				   VkFormat format, VkImageTiling tiling, 
-				   VkImageUsageFlags usage, VkMemoryPropertyFlags propertyFlags, 
-				   VkImage &image, VkDeviceMemory &imageMemory);
-
-	void setImageLayout(VkImage image, 
-					    VkImageAspectFlags aspectMask,
-						VkImageLayout oldLayout, 
-						VkImageLayout newLayout, 
-						VkAccessFlagBits srcAccessMask, 
-						VkPipelineStageFlags srcStages, 
-						VkPipelineStageFlags destStages);
-
-	void initVulkanTexture(uint8 *texPixels, 
-						   uint32 texWidth,
-						   uint32 texHeight,
-						   VkBuffer &stagingBuffer, 
-						   VkDeviceMemory &stagingBufferMemory, 
-						   VulkanTexture &texture);
-	
-	void freeVulkanTexture(VulkanTexture &tex);
-};
+#define MAX_FRAMES 3
 
 // STRUCTS AND HELPER FUNCTIONS 
 //==================== Vulkan Config ======================
@@ -186,6 +117,8 @@ struct SwapchainImageResources
 
 struct Swapchain
 {
+	VkDevice *device;
+	VkCommandPool *cmd;
 	VkSwapchainKHR swapchain;
 	VkSurfaceCapabilitiesKHR surfaceCapabilities;	
 	std::vector<VkSurfaceFormatKHR> surfaceFormats;
@@ -218,14 +151,88 @@ struct Swapchain
 	
 	void createSwapchainAndImageResources(VkSurfaceKHR surface, VkDevice logicalDevice);
 
-	void destroy();
+	void destroy(VkDevice &device, VkCommandPool &cmdPool);
 };
 
+void allocPrimaryCmdBuffer(VkDevice device, VkCommandPool &cmdPool, VkCommandBuffer &cmdBuffer);
 //==================================================================
 
-void allocPrimaryCmdBuffer(VkDevice device, VkCommandPool &cmdPool, VkCommandBuffer &cmdBuffer);
+struct VulkanManager
+{
+	Win32Window *window;
+	VulkanConfig config;
 
+	VkInstance instance;
 
+	VkSurfaceKHR surface;
 
+	PhysicalDevice physicalDevice;
+
+	LogicalDevice logicalDevice;
+
+	Swapchain swapchain;
+	
+	bool *isMinimized;
+	
+	VkSemaphore imageAcquiredSemaphores[MAX_FRAMES];
+	VkSemaphore drawCompleteSemaphores[MAX_FRAMES];
+	VkSemaphore imageOwnershipSemaphores[MAX_FRAMES];
+	VkFence fences[MAX_FRAMES];
+
+	VkRenderPass renderPass;
+
+	VkCommandPool cmdPool;
+	VkCommandPool presentCmdPool;
+	VkCommandBuffer cmdBuffer; //used for initialization
+	
+	VkPipelineLayout pipelineLayout;
+	VkPipelineCache pipelineCache;
+	VkPipeline pipeline;
+
+	Depth depth;
+
+	VulkanManager(){} //do nothing
+	~VulkanManager(){} //do nothing
+
+	void startUp(Win32Window *window, VulkanConfig config);
+	void shutDown();
+	
+	void prepareForResize();
+
+	void initInstance();
+	void initSurface(Win32Window *window);
+	void initPhysicalDevice(VkPhysicalDeviceFeatures featuresToEnable);
+	void initCmdPool();
+	void initDepthImage(VkFormat depthFormat, uint32 width, uint32 height);
+	void initSyncPrimitives();
+	
+	void initBuffer(VkDeviceSize size, 
+					VkBufferUsageFlags usageFlags, 
+					VkMemoryPropertyFlags propertyFlags,
+					VkBuffer &buffer, 
+					VkDeviceMemory &bufferMemory);
+					
+	void initImage(uint32 width, uint32 height,
+				   VkFormat format, VkImageTiling tiling, 
+				   VkImageUsageFlags usage, VkMemoryPropertyFlags propertyFlags, 
+				   VkImage &image, VkDeviceMemory &imageMemory);
+
+	void setImageLayout(VkImage image, 
+					    VkImageAspectFlags aspectMask,
+						VkImageLayout oldLayout, 
+						VkImageLayout newLayout, 
+						VkAccessFlagBits srcAccessMask, 
+						VkPipelineStageFlags srcStages, 
+						VkPipelineStageFlags destStages);
+
+	void initVulkanTexture(uint8 *texPixels, 
+						   uint32 texWidth,
+						   uint32 texHeight,
+						   VkBuffer &stagingBuffer, 
+						   VkDeviceMemory &stagingBufferMemory, 
+						   VulkanTexture &texture);
+	
+	void freeVulkanTexture(VulkanTexture &tex);
+};
 
 #endif

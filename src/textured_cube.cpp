@@ -93,6 +93,8 @@ const std::vector<float> texCoords =
 
 void Demo::startUp()
 {
+    isPrepared = false;
+
     //geometry data
     vertexData = vertices;
     uvData = texCoords; 
@@ -100,7 +102,7 @@ void Demo::startUp()
     //load texture files
     textures.resize(1);
     vulkanTextures.resize(1);
-    textures[0].load(std::string("path_to_string"));
+    textures[0].load(std::string("textures/will_confia.png"));
 
     //====== Vulkan configuration ===== 
     VulkanConfig vulkanConfig{};
@@ -120,13 +122,41 @@ void Demo::startUp()
     vulkanConfig.preferredSurfaceFormat.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     vulkanConfig.texFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
-    //===================================
-    //vulkanManager.startUp(&window, );
+    //======== window ===========
+    window.init(this, L"Vulkan Demo - Textured Cube", 1280, 720);
+    
+    //======== camera ===========
+    camera.pos = {0.0f, 3.0f, 5.0f};
+    camera.lookAt(glm::vec3(0.0f, 0.0f, 0.0f));
+    
+    camera.calcProjMatrix();
+    //======== Vulkan Manager =========
+    vulkanManager.isMinimized = &isMinimized;
+    vulkanManager.startUp(&window, vulkanConfig);
 }
 
 void Demo::shutDown()
 {
+    isPrepared = false;
+    vkDeviceWaitIdle(vulkanManager.logicalDevice.device);
 
+    for(size_t i = 0; i < vulkanTextures.size(); i++)
+    {
+        vulkanManager.freeVulkanTexture(vulkanTextures[i]);
+    } 
+    
+    vkDestroyDescriptorPool(vulkanManager.logicalDevice.device, 
+                            descriptorPool, nullptr);
+
+    vkDestroyDescriptorSetLayout(vulkanManager.logicalDevice.device, 
+                                 descriptorSetLayout, 
+                                 nullptr);
+    
+    //if the window is minized, resize() has already done some cleanup.
+    if(!isMinimized)
+    {
+        vulkanManager.shutDown(); 
+    }
 }
 
 void Demo::prepare()
@@ -164,11 +194,12 @@ void Demo::prepare()
 
     if(isMinimized)
     {
-        prepared = false;
+        isPrepared = false;
         return;
     }
 
-    vulkanManager.initDepthImage(); 
+    vulkanManager.initDepthImage(vulkanManager.config.preferredDepthFormat,
+                                 window.width, window.height); 
 
     //init textures
     vulkanManager.initVulkanTexture(textures[0].pixels, 
@@ -231,7 +262,7 @@ void Demo::prepare()
     if(stagingTexture.buffer) vulkanManager.freeVulkanTexture(stagingTexture);
     
     currBufferIndex = 0;
-    prepared = true;
+    isPrepared = true;
 }
 
 
@@ -491,8 +522,8 @@ void Demo::initPipeline()
     std::vector<char> vsBuffer;
     std::vector<char> fsBuffer;
     
-    std::string vsFilename = "textured_cube_vs.spv";
-    std::string fsFilename = "textured_cube_fs.spv";
+    std::string vsFilename = "shaders/textured_cube/textured_cube_vert.spv";
+    std::string fsFilename = "shaders/textured_cube/textured_cube_frag.spv";
     
     loadShaderModule(vsFilename, vsBuffer);
     loadShaderModule(fsFilename, fsBuffer);
@@ -615,7 +646,8 @@ void Demo::initDescriptorPool()
     poolSizes[0].descriptorCount = vulkanManager.swapchain.imageCount;
     
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = vulkanManager.swapchain.imageCount * textures.size();
+    poolSizes[1].descriptorCount = vulkanManager.swapchain.imageCount * 
+                                   (uint32)(textures.size());
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -632,7 +664,6 @@ void Demo::initDescriptorPool()
 void Demo::initDescriptorSet()
 {
     std::vector<VkDescriptorImageInfo> texDescriptorInfos(vulkanTextures.size(), VkDescriptorImageInfo{});
-    VkWriteDescriptorSet writeDescriptorSets[2] = {};
 
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -661,7 +692,7 @@ void Demo::initDescriptorSet()
     
     writeDescriptorSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writeDescriptorSets[1].dstBinding = 1;
-    writeDescriptorSets[1].descriptorCount = vulkanTextures.size();
+    writeDescriptorSets[1].descriptorCount = (uint32)(vulkanTextures.size());
     writeDescriptorSets[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writeDescriptorSets[1].pImageInfo = texDescriptorInfos.data();
     
@@ -745,8 +776,8 @@ void Demo::recordDrawCommands(VkCommandBuffer cmdBuffer)
     vp.maxDepth = 1.0f;
     
     VkRect2D scissor{};
-    scissor.extent.width = (float) vulkanManager.swapchain.imageExtent.width;
-    scissor.extent.height = (float) vulkanManager.swapchain.imageExtent.height;
+    scissor.extent.width = vulkanManager.swapchain.imageExtent.width;
+    scissor.extent.height = vulkanManager.swapchain.imageExtent.height;
 
     vkCmdSetViewport(cmdBuffer, 0, 1, &vp);
     vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
@@ -833,7 +864,35 @@ void Demo::flushInitCmd()
 
 void Demo::resize()
 {
+    if(!isPrepared)
+    {
+        if(isMinimized)
+        {
+            prepare();
+        }
+        return;
+    }
     
+    //NOTE: To properly resize the window, the swapchain needs to be recreated,
+    //the command buffers need to be redone, etc.
+
+    isPrepared = false;
+    vkDeviceWaitIdle(vulkanManager.logicalDevice.device);
+
+    //destroy necessary vulkan objects
+    for(size_t i = 0; i < vulkanTextures.size(); i++)
+    {
+        vulkanManager.freeVulkanTexture(vulkanTextures[i]);
+    } 
+
+    vkDestroyDescriptorPool(vulkanManager.logicalDevice.device, 
+                            descriptorPool, nullptr);
+    vkDestroyDescriptorSetLayout(vulkanManager.logicalDevice.device, 
+                                 descriptorSetLayout, nullptr);
+    
+    vulkanManager.prepareForResize();
+    //prepare() will recreate them
+    prepare();
 }
 
 void Demo::updateDataBuffer()
@@ -844,34 +903,35 @@ void Demo::updateDataBuffer()
 void Demo::draw()
 {
     //Make sure that at most MAX_FRAMES rendering are happening at the same time.
+    vkWaitForFences(vulkanManager.logicalDevice.device, 1, 
+                    &vulkanManager.fences[frameIndex], VK_TRUE, UINT64_MAX);
+    vkResetFences(vulkanManager.logicalDevice.device, 1, 
+                  &vulkanManager.fences[frameIndex]);
     
-    vkWaitForFences(vulkanManager.logicalDevice.device, 1, &fences[frameIndex], VK_TRUE, UINT64_MAX);
-    vkResetFences(vulkanManager.logicalDevice.device, 1, &fences[frameIndex]);
-    
-    VkResult err;
+    VkResult res;
     do
     {
         //get the index of the next available swapchain image:
-        err = 
+        res = 
         vkAcquireNextImageKHR(vulkanManager.logicalDevice.device, 
                               vulkanManager.swapchain.swapchain,
                               UINT64_MAX,
-                              imageAcquiredSemaphores[frameIndex], 
+                              vulkanManager.imageAcquiredSemaphores[frameIndex], 
                               VK_NULL_HANDLE, 
                               &currBufferIndex);
         
-        if (err == VK_ERROR_OUT_OF_DATE_KHR)
+        if (res == VK_ERROR_OUT_OF_DATE_KHR)
         {
             //swapchain is out of date (window resized, etc) and must be recreated.
             resize();
         }
         
-        else if (err == VK_SUBOPTIMAL_KHR)
+        else if (res == VK_SUBOPTIMAL_KHR)
         {
             //swapchain is not optimal but the image will be correctly presented.
             break;
         }
-        else if (err == VK_ERROR_SURFACE_LOST_KHR)
+        else if (res == VK_ERROR_SURFACE_LOST_KHR)
         {
             vkDestroySurfaceKHR(vulkanManager.instance, vulkanManager.surface, nullptr);
             vulkanManager.initSurface(&window);
@@ -879,9 +939,9 @@ void Demo::draw()
         }
         else
         {
-            VK_CHECK(err);
+            VK_CHECK(res);
         }
-    } while (err != VK_SUCCESS);
+    } while (res != VK_SUCCESS);
 
     updateDataBuffer();  //TODO
 
@@ -893,15 +953,15 @@ void Demo::draw()
     submitInfo.pNext = nullptr;
     submitInfo.pWaitDstStageMask = &pipelineStageFlags;
     submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &imageAcquiredSemaphores[frameIndex];
+    submitInfo.pWaitSemaphores = &vulkanManager.imageAcquiredSemaphores[frameIndex];
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &vulkanManager.swapchain.imageResources[currBufferIndex].cmd;
     submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &drawCompleteSemaphores[frameIndex];
+    submitInfo.pSignalSemaphores = &vulkanManager.drawCompleteSemaphores[frameIndex];
 
     VK_CHECK(vkQueueSubmit(vulkanManager.logicalDevice.graphicsQueue, 
                            1, &submitInfo, 
-                           fences[frameIndex]));
+                           vulkanManager.fences[frameIndex]));
 
     if(vulkanManager.physicalDevice.separatePresentQueue)
     {
@@ -911,11 +971,11 @@ void Demo::draw()
 
         VkFence nullFence = VK_NULL_HANDLE; 
         submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = drawCompleteSemaphores[frameIndex];
+        submitInfo.pWaitSemaphores = &vulkanManager.drawCompleteSemaphores[frameIndex];
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = vulkanManager.swapchain.imageResources[currBufferIndex].graphicsToPresentCmd;
+        submitInfo.pCommandBuffers = &vulkanManager.swapchain.imageResources[currBufferIndex].graphicsToPresentCmd;
         submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = imageOwnershipSemaphores[frameIndex];
+        submitInfo.pSignalSemaphores = &vulkanManager.imageOwnershipSemaphores[frameIndex];
         
         
         VK_CHECK(vkQueueSubmit(vulkanManager.logicalDevice.graphicsQueue, 
@@ -932,33 +992,32 @@ void Demo::draw()
 
     if(vulkanManager.physicalDevice.separatePresentQueue)
     {
-        presentInfo.pWaitSemaphores = &imageOwnershipSemaphores[frameIndex];
+        presentInfo.pWaitSemaphores = &vulkanManager.imageOwnershipSemaphores[frameIndex];
     }
     else
     {
-        presentInfo.pWaitSemaphores = &drawCompleteSemaphores[frameIndex];
+        presentInfo.pWaitSemaphores = &vulkanManager.drawCompleteSemaphores[frameIndex];
     }
 
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &vulkanManager.swapchain.swapchain;
     presentInfo.pImageIndices = &currBufferIndex;
     
-    err = vkQueuePresentKHR(vulkanManager.logicalDevice.presentQueue, &presentInfo);
+    res = vkQueuePresentKHR(vulkanManager.logicalDevice.presentQueue, &presentInfo);
     frameIndex += 1;
     frameIndex %= MAX_FRAMES;
 
-    if (err == VK_ERROR_OUT_OF_DATE_KHR)
+    if (res == VK_ERROR_OUT_OF_DATE_KHR)
     {
         //swapchain is out of date (window resized, etc) and must be recreated.
         resize();
     }
     
-    else if (err == VK_SUBOPTIMAL_KHR)
+    else if (res == VK_SUBOPTIMAL_KHR)
     {
         //swapchain is not optimal but the image will be correctly presented.
-        break;
     }
-    else if (err == VK_ERROR_SURFACE_LOST_KHR)
+    else if (res == VK_ERROR_SURFACE_LOST_KHR)
     {
         vkDestroySurfaceKHR(vulkanManager.instance, vulkanManager.surface, nullptr);
         vulkanManager.initSurface(&window);
@@ -966,13 +1025,13 @@ void Demo::draw()
     }
     else
     {
-        VK_CHECK(err);
+        VK_CHECK(res);
     }
 }
 
-void Demo::run()
+void Demo::render()
 {
-    if(!prepared) return;
+    if(!isPrepared) return;
     
     draw();
 }
@@ -1014,3 +1073,110 @@ void loadShaderModule(std::string &filename, std::vector<char> &buffer)
     shaderFile.close();
 }
 
+//=================== Windows WndProc Callback ===========================
+LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
+                                      WPARAM wParam,
+                    LPARAM lParam)
+{
+    LRESULT result = 0;
+
+    switch(uMsg)
+    {
+        case WM_CLOSE:
+        {
+            PostQuitMessage(1);
+        } break;
+        
+        case WM_PAINT:
+        {
+            demo->render();
+        } break; 
+        
+        case WM_GETMINMAXINFO:
+        {
+            ((MINMAXINFO *)lParam)->ptMinTrackSize = POINT{(LONG)(minX), (LONG)(minY)};
+            return 0;
+        }
+        
+        case WM_ERASEBKGND:
+        {
+            return 1;
+        }
+
+        case WM_SIZE:
+        {
+            //Resize to the new window size, expect when it was minimized.
+            //Vulkan doesn't support images or swapchains with width and height = 0
+            if(wParam != SIZE_MINIMIZED)
+            {
+                //The low-order word of lParam specifies the new width of the client area.
+                //The high-order word of lParam specifies the new height of the client area.
+                width = lParam & 0xFFFF;
+                height = (lParam & 0xFFFF0000) >> 16; 
+                demo->resize();
+            }
+            return 0;
+
+        } break;
+        
+        case WM_KEYDOWN:
+        {
+            //TODO: handle input
+            
+            return 0;
+        }break;
+
+        default:
+        {
+            result = DefWindowProcA(handle, uMsg, wParam, lParam);
+        } break;
+        
+        
+    }
+    return result;
+}
+
+// ======================= Main =====================
+
+int WINAPI WinMain(HINSTANCE hInstance, 
+                   HINSTANCE hPrevInstance, 
+                   LPSTR pCmdLine, 
+                   int nCmdShow)
+{
+    Demo demo;     
+    demo.startUp();
+    
+    demo.prepare();
+
+    MSG msg{};
+
+    bool isRunning = false;
+    while(isRunning)
+    {
+        if(demo.isPaused)
+        {
+            BOOL succ = WaitMessage();
+            if(!succ)
+            {
+                LOGE_EXIT("WaitMessage() failed on paused demo.");
+            }
+        }
+    
+        PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE);
+        if(msg.message == WM_QUIT)
+        {
+            isRunning = false;
+        }
+        else
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+        
+        RedrawWindow(demo.window.handle, nullptr, nullptr, RDW_INTERNALPAINT);
+    }
+
+    demo.shutDown();
+    
+    return 0;
+}

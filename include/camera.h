@@ -15,8 +15,8 @@ struct Camera
 
 	struct Frustum
 	{
-		float near;
-		float far;
+		float near_;
+		float far_;
 		float right;
 		float left;
 		float top;
@@ -24,15 +24,15 @@ struct Camera
 	} frustum;
 
 	void init(glm::vec3 position, glm::vec3 target,
-			  float near,  float far,
+			  float near_,  float far_,
 			  float right, float left,
 			  float top,   float bottom)
 	{
 		pos = position;
 		lookAt(target);
 
-		frustum.near = near;
-		frustum.far = far;
+		frustum.near_ = near_;
+		frustum.far_ = far_;
 		frustum.right = right;
 		frustum.left = left;
 		frustum.top = top;
@@ -70,14 +70,14 @@ struct Camera
 
 	void calcProjMatrix()
 	{
-		float m00 = (2.0f * frustum.near)/(frustum.right - frustum.left);
+		float m00 = (2.0f * frustum.near_)/(frustum.right - frustum.left);
 		float m02 = (frustum.right + frustum.left)/(frustum.right - frustum.left);
 		
-		float m11 = (2.0f * frustum.near)/(frustum.top - frustum.bottom);
+		float m11 = (2.0f * frustum.near_)/(frustum.top - frustum.bottom);
 		float m12 = (frustum.top + frustum.bottom)/(frustum.top - frustum.bottom);
 		
-		float m22 = -(frustum.far + frustum.near)/(frustum.top - frustum.near);
-		float m23 = (-2.0f * frustum.far * frustum.near)/(frustum.far - frustum.near);
+		float m22 = -(frustum.far_ + frustum.near_)/(frustum.top - frustum.near_);
+		float m23 = (-2.0f * frustum.far_ * frustum.near_)/(frustum.far_ - frustum.near_);
 
 		projMatrix = glm::mat4(m00,  0.0f,  m02,   0.0f,
 		                       0.0f, m11,   m12,   0.0f,

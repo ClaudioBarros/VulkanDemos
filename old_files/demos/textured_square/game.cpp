@@ -14,7 +14,7 @@ void Game::shutDown()
     renderManager.shutDown();
 }
 
-int main()
+//int main()
 {
     Game game;
     game.startUp();

@@ -27,33 +27,86 @@ void VulkanManager::startUp(Win32Window *window, VulkanConfig vulkanConfig)
     //---------- LOGICAL DEVICE AND QUEUES -------------
 
     logicalDevice.init(physicalDevice, config);
-    //--------
 
+    //-------------- SYNC PRIMITIVES ----------------
+    initSyncPrimitives();
+
+    //--------------- SWAPCHAIN ------------------
     swapchain.init(physicalDevice.device, 
-                   logicalDevice.device, 
-                   surface, 
+                   logicalDevice.device, surface, 
                    config.preferredSurfaceFormat,
                    config.preferredPresentMode,
                    window->width, window->height);
 
+    //--------------- COMMAND POOL ---------------
     initCmdPool();
+}
 
+void VulkanManager::prepareForResize()
+{
+    vkDestroyPipeline(logicalDevice.device, pipeline, nullptr);
+    vkDestroyPipelineCache(logicalDevice.device, pipelineCache, nullptr);
+    vkDestroyPipelineLayout(logicalDevice.device, pipelineLayout, nullptr); 
+
+    vkDestroyRenderPass(logicalDevice.device, renderPass, nullptr);
+
+    vkDestroyImageView(logicalDevice.device, depth.view, nullptr);
+    vkDestroyImage(logicalDevice.device, depth.image, nullptr);
+    vkFreeMemory(logicalDevice.device, depth.mem, nullptr);
+
+    swapchain.destroy(logicalDevice.device, cmdPool);
+    
+    vkDestroyCommandPool(logicalDevice.device, cmdPool, nullptr);
+    if(physicalDevice.separatePresentQueue)
+    {
+        vkDestroyCommandPool(logicalDevice.device, presentCmdPool, nullptr);
+    }
 }
 
 void VulkanManager::shutDown()
 {
+    //Wait for fences from present operations
+    for(uint32 i = 0; i < MAX_FRAMES; i++)
+    {
+        vkWaitForFences(logicalDevice.device, 1, 
+                        &fences[i], VK_TRUE, UINT64_MAX);
 
-    //swapchain
-    swapchain.destroy();
+        vkDestroyFence(logicalDevice.device, fences[i], nullptr);
+        vkDestroySemaphore(logicalDevice.device, imageAcquiredSemaphores[i], nullptr);
+        vkDestroySemaphore(logicalDevice.device, drawCompleteSemaphores[i], nullptr);
+        
+        if(physicalDevice.separatePresentQueue)
+        {
+            vkDestroySemaphore(logicalDevice.device, imageOwnershipSemaphores[i], nullptr);
+        }
+    }
 
-    //logical device
-    logicalDevice.destroy();
+    //if the window is minimized, prepareForResize() has already done some cleanup.
+    if(!(*isMinimized))
+    {
+        vkDestroyPipeline(logicalDevice.device, pipeline, nullptr);
+        vkDestroyPipelineCache(logicalDevice.device, pipelineCache, nullptr);
+        vkDestroyPipelineLayout(logicalDevice.device, pipelineLayout, nullptr); 
 
-    //surface
-    vkDestroySurfaceKHR(instance, surface, nullptr);
+        vkDestroyRenderPass(logicalDevice.device, renderPass, nullptr);
 
-    //instance
-    vkDestroyInstance(instance, nullptr);
+        vkDestroyImageView(logicalDevice.device, depth.view, nullptr);
+        vkDestroyImage(logicalDevice.device, depth.image, nullptr);
+        vkFreeMemory(logicalDevice.device, depth.mem, nullptr);
+        
+        swapchain.destroy(logicalDevice.device, cmdPool);
+        
+        vkDestroyCommandPool(logicalDevice.device, cmdPool, nullptr);
+        if(physicalDevice.separatePresentQueue)
+        {
+            vkDestroyCommandPool(logicalDevice.device, presentCmdPool, nullptr);
+        }
+
+        vkDeviceWaitIdle(logicalDevice.device);
+        logicalDevice.destroy();
+        vkDestroySurfaceKHR(instance, surface, nullptr);
+        vkDestroyInstance(instance, nullptr);
+    }
 }
 
 
@@ -193,7 +246,6 @@ uint32 findMemoryTypeFromProperties(const VkPhysicalDeviceMemoryProperties *pMem
     LOGE_EXIT("Unable to find suitable memory type from the given properties.");
 }
 
-
 void VulkanManager::initDepthImage(VkFormat depthFormat, uint32 width, uint32 height)
 {
     //--- create image --- 
@@ -241,6 +293,43 @@ void VulkanManager::initDepthImage(VkFormat depthFormat, uint32 width, uint32 he
     viewInfo.subresourceRange.layerCount = 1;
 
     VK_CHECK(vkCreateImageView(logicalDevice.device, &viewInfo, nullptr, &depth.view));
+}
+
+void VulkanManager::initSyncPrimitives()
+{
+    //Create semaphores to sunchronize acquiring presentable buffers before rendering
+    //and waiting for drawaing to be complete before presenting
+    
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    
+    //Create fences that we can use to throttle if we get too far ahead of the image presents
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    
+    for(uint32 i = 0; i < MAX_FRAMES; i++)
+    {
+        VK_CHECK(vkCreateFence(logicalDevice.device, &fenceInfo, nullptr, &fences[i]));
+
+        VK_CHECK(vkCreateSemaphore(logicalDevice.device, 
+                                   &semaphoreInfo, 
+                                   nullptr, 
+                                   &imageAcquiredSemaphores[i]));
+
+        VK_CHECK(vkCreateSemaphore(logicalDevice.device, 
+                                   &semaphoreInfo, 
+                                   nullptr, 
+                                   &drawCompleteSemaphores[i]));
+        
+        if(physicalDevice.separatePresentQueue)
+        {
+            VK_CHECK(vkCreateSemaphore(logicalDevice.device, 
+                                       &semaphoreInfo, 
+                                       nullptr, 
+                                       &imageOwnershipSemaphores[i]));
+        }
+    }
 }
 
 void VulkanManager::initBuffer(VkDeviceSize size, 
@@ -803,11 +892,55 @@ void Swapchain::init(VkPhysicalDevice physicalDevice,
                      VkPresentModeKHR preferredPresentMode,
                      uint32 surfaceWidth, uint32 surfaceHeight)
 {
+    device = &logicalDevice;
     querySupportInfo(physicalDevice, surface);
     chooseSettings(preferredFormat, preferredPresentMode, surfaceWidth, surfaceHeight);
 }
 
-void Swapchain::destroy()
+void Swapchain::destroy(VkDevice &device, VkCommandPool &cmdPool)
 {
+    
+    for(uint32 i = 0; i < imageCount; i++)
+    {
+        vkDestroyFramebuffer(device, imageResources[i].framebuffer, nullptr);
 
+        vkDestroyImageView(device, imageResources[i].view, nullptr);
+        
+        vkFreeCommandBuffers(device, cmdPool, 1, &imageResources[i].cmd);
+        
+        vkDestroyBuffer(device, imageResources[i].uniformBuffer, nullptr);
+        
+        vkUnmapMemory(device, imageResources[i].uniformMemory);
+        vkFreeMemory(device, imageResources[i].uniformMemory, nullptr);
+    }
+         
+    vkDestroySwapchainKHR(device, this->swapchain, nullptr);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

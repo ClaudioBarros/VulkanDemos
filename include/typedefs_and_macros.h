@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/msvc_sink.h>
 #include "to_string.h"
 
 //------- TYPEDEFS ---------
