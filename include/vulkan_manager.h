@@ -19,6 +19,9 @@ struct VulkanConfig
 	bool enableValidationLayers;
 	std::string errorLogFilePath;
 
+	//debug callback ptr
+    PFN_vkDebugUtilsMessengerCallbackEXT ptrDebugMessenger;
+
 	//physical device
 	VkPhysicalDeviceFeatures physDeviceFeaturesToEnable;
 
@@ -35,6 +38,7 @@ struct VulkanConfig
 	std::vector<std::string> texFiles;
 	
 	std::vector<const char*> validationLayers;
+	std::vector<const char*> instanceExtensions;
 	std::vector<const char*> deviceExtensions;
 };
 
@@ -117,8 +121,6 @@ struct SwapchainImageResources
 
 struct Swapchain
 {
-	VkDevice *device;
-	VkCommandPool *cmd;
 	VkSwapchainKHR swapchain;
 	VkSurfaceCapabilitiesKHR surfaceCapabilities;	
 	std::vector<VkSurfaceFormatKHR> surfaceFormats;
@@ -132,35 +134,46 @@ struct Swapchain
 
 	private:
 
- 	void querySupportInfo(VkPhysicalDevice physicalDevice,  
-	  					  VkSurfaceKHR surface);
+		void querySupportInfo(VkPhysicalDevice physicalDevice,  
+							  VkSurfaceKHR surface);
 
-	void chooseSettings(VkSurfaceFormatKHR preferredFormat,
-						VkPresentModeKHR preferredPresentMode,
-						uint32 width, uint32 height);
-
+		void chooseSettings(VkSurfaceFormatKHR preferredFormat,
+							VkPresentModeKHR preferredPresentMode,
+							uint32 width, uint32 height);
 
 	public:
 
- 	void init(VkPhysicalDevice physicalDevice,  
-	 		  VkDevice logicalDevice,
-			  VkSurfaceKHR surface,
-			  VkSurfaceFormatKHR preferredFormat,
-			  VkPresentModeKHR preferredPresentMode,
-			  uint32 surfaceWidth, uint32 surfaceHeight);
-	
-	void createSwapchainAndImageResources(VkSurfaceKHR surface, VkDevice logicalDevice);
+		void init(VkPhysicalDevice physicalDevice,  
+				  VkDevice logicalDevice,
+				  VkSurfaceKHR surface,
+				  VkSurfaceFormatKHR preferredFormat,
+				  VkPresentModeKHR preferredPresentMode,
+				  uint32 surfaceWidth, uint32 surfaceHeight);
+		
+		void createSwapchainAndImageResources(VkSurfaceKHR surface, VkDevice logicalDevice);
 
-	void destroy(VkDevice &device, VkCommandPool &cmdPool);
+		void destroy(VkDevice &device, VkCommandPool &cmdPool);
 };
 
+//------------------------
 void allocPrimaryCmdBuffer(VkDevice device, VkCommandPool &cmdPool, VkCommandBuffer &cmdBuffer);
+
+VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, 
+                                      const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, 
+                                      const VkAllocationCallbacks* pAllocator, 
+                                      VkDebugUtilsMessengerEXT* pDebugMessenger);
+
+void DestroyDebugUtilsMessengerEXT(VkInstance instance, 
+                                   VkDebugUtilsMessengerEXT debugMessenger, 
+                                   const VkAllocationCallbacks* pAllocator) ;
 //==================================================================
 
 struct VulkanManager
 {
 	Win32Window *window;
 	VulkanConfig config;
+	
+	VkDebugUtilsMessengerEXT debugMessenger;
 
 	VkInstance instance;
 
@@ -199,6 +212,8 @@ struct VulkanManager
 	
 	void prepareForResize();
 
+	void displayInfo();
+	void initDebugMessenger();
 	void initInstance();
 	void initSurface(Win32Window *window);
 	void initPhysicalDevice(VkPhysicalDeviceFeatures featuresToEnable);
@@ -215,7 +230,7 @@ struct VulkanManager
 	void initImage(uint32 width, uint32 height,
 				   VkFormat format, VkImageTiling tiling, 
 				   VkImageUsageFlags usage, VkMemoryPropertyFlags propertyFlags, 
-				   VkImage &image, VkDeviceMemory &imageMemory);
+				   VkImageLayout initialLayout, VkImage &image, VkDeviceMemory &imageMemory);
 
 	void setImageLayout(VkImage image, 
 					    VkImageAspectFlags aspectMask,

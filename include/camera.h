@@ -37,6 +37,8 @@ struct Camera
 		frustum.left = left;
 		frustum.top = top;
 		frustum.bottom = bottom;
+		
+		calcProjMatrix();
 	}
 
 	void lookAt(glm::vec3 target)

@@ -5,6 +5,7 @@
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/msvc_sink.h>
+#include <spdlog/sinks/basic_file_sink.h>
 #include "to_string.h"
 
 //------- TYPEDEFS ---------
@@ -26,11 +27,11 @@ typedef int32_t  int32;
 
 // #define __FILENAME__ (static_cast<const char *>(__FILE__) + ROOT_PATH_SIZE)
 
-#define LOGI(...) spdlog::info(__VA_ARGS__);
-#define LOGW(...) spdlog::warn(__VA_ARGS__);
-#define LOGE(...) spdlog::error("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__));
-#define LOGE_EXIT(...) spdlog::error("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__)); exit(1);
-#define LOGD(...) spdlog::debug(__VA_ARGS__);
+#define LOGI(...) spdlog::get("_logger")->info(__VA_ARGS__);
+#define LOGW(...) spdlog::get("_logger")->warn(__VA_ARGS__);
+#define LOGE(...) spdlog::get("_logger")->error("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__));
+#define LOGE_EXIT(...) spdlog::get("_logger")->error("[{}:{}] {}", __FILE__, __LINE__, fmt::format(__VA_ARGS__)); exit(1);
+#define LOGD(...) spdlog::get("_logger")->debug(__VA_ARGS__);
 
 #define VK_CHECK(x)                                                 \
 	do                                                              \

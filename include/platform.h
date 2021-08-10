@@ -10,7 +10,7 @@ struct Demo;
 
 struct Win32Window
 {
-	HWND handle;
+	HWND handle = nullptr;
 	HINSTANCE hInstance;
 	std::wstring name;
 
@@ -53,8 +53,8 @@ struct Win32Window
 
 	void init(Demo *pDemo, 
 	          const std::wstring windowClassName, 
-			  uint16 _height, 
-			  uint16 _width)
+			  uint16 _width, 
+			  uint16 _height)
 	{
 		this->demo = pDemo; 
 		this->name = windowClassName;

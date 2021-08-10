@@ -16,6 +16,7 @@ struct Texture
 	uint8 *pixels;	
 	uint32 width;
 	uint32 height;
+	uint32 channels;
 	std::string filepath;
 
 	void load(std::string filepath);
@@ -25,8 +26,8 @@ struct Texture
 struct VS_UBO 
 {
 	alignas(16) glm::mat4 mvp;
-	alignas(16) glm::vec4 pos;
-	alignas(16) glm::vec2 uv;
+	alignas(16) glm::vec4 pos[12 * 3];
+	alignas(16) glm::vec4 attr[12 * 3];
 };
 
 void loadShaderModule(std::string &filename, std::vector<char> &buffer);
@@ -47,9 +48,10 @@ struct Demo
 	VkDescriptorSetLayout descriptorSetLayout;
 	VkDescriptorPool descriptorPool;
 	
-	uint32 currBufferIndex;
-	int frameIndex;	
+	uint32 currBufferIndex = 0;
+	int frameIndex = 0;	
 
+	bool isInitialized;
 	bool isMinimized;	
 	bool isPaused;
 	bool isPrepared;
@@ -61,6 +63,8 @@ struct Demo
 	void shutDown();
 	
 	void prepare();
+	void initStagingTexture();
+	void initTextures();
 	void initCubeDataBuffers();
 	void initDescriptorLayout();
 	void initRenderPass();

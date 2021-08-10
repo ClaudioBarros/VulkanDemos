@@ -1,20 +1,16 @@
 #include "vulkan_manager.h"
 
-/*
-TODO LIST:
-            -swapchain destruction
-            -swapchain recreation
-            -depth buffer 
-*/
-
 void VulkanManager::startUp(Win32Window *window, VulkanConfig vulkanConfig)
 {
-    //INSTANCE CREATION
     this->config = vulkanConfig;
+    displayInfo();
 
     //------ INSTANCE ---------
 
     initInstance();
+
+    //------ Debug Callback -----
+    initDebugMessenger();
 
     //------ SURFACE ---------------
 
@@ -40,27 +36,6 @@ void VulkanManager::startUp(Win32Window *window, VulkanConfig vulkanConfig)
 
     //--------------- COMMAND POOL ---------------
     initCmdPool();
-}
-
-void VulkanManager::prepareForResize()
-{
-    vkDestroyPipeline(logicalDevice.device, pipeline, nullptr);
-    vkDestroyPipelineCache(logicalDevice.device, pipelineCache, nullptr);
-    vkDestroyPipelineLayout(logicalDevice.device, pipelineLayout, nullptr); 
-
-    vkDestroyRenderPass(logicalDevice.device, renderPass, nullptr);
-
-    vkDestroyImageView(logicalDevice.device, depth.view, nullptr);
-    vkDestroyImage(logicalDevice.device, depth.image, nullptr);
-    vkFreeMemory(logicalDevice.device, depth.mem, nullptr);
-
-    swapchain.destroy(logicalDevice.device, cmdPool);
-    
-    vkDestroyCommandPool(logicalDevice.device, cmdPool, nullptr);
-    if(physicalDevice.separatePresentQueue)
-    {
-        vkDestroyCommandPool(logicalDevice.device, presentCmdPool, nullptr);
-    }
 }
 
 void VulkanManager::shutDown()
@@ -101,12 +76,115 @@ void VulkanManager::shutDown()
         {
             vkDestroyCommandPool(logicalDevice.device, presentCmdPool, nullptr);
         }
+     }
 
-        vkDeviceWaitIdle(logicalDevice.device);
-        logicalDevice.destroy();
-        vkDestroySurfaceKHR(instance, surface, nullptr);
-        vkDestroyInstance(instance, nullptr);
+    vkDeviceWaitIdle(logicalDevice.device);
+
+    logicalDevice.destroy();
+
+    vkDestroySurfaceKHR(instance, surface, nullptr);
+    
+    if(config.enableValidationLayers)
+    {
+        DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
     }
+
+    vkDestroyInstance(instance, nullptr);
+}
+
+void VulkanManager::prepareForResize()
+{
+    vkDestroyPipeline(logicalDevice.device, pipeline, nullptr);
+    vkDestroyPipelineCache(logicalDevice.device, pipelineCache, nullptr);
+    vkDestroyPipelineLayout(logicalDevice.device, pipelineLayout, nullptr); 
+
+    vkDestroyRenderPass(logicalDevice.device, renderPass, nullptr);
+
+    vkDestroyImageView(logicalDevice.device, depth.view, nullptr);
+    vkDestroyImage(logicalDevice.device, depth.image, nullptr);
+    vkFreeMemory(logicalDevice.device, depth.mem, nullptr);
+
+    swapchain.destroy(logicalDevice.device, cmdPool);
+    
+    vkDestroyCommandPool(logicalDevice.device, cmdPool, nullptr);
+    if(physicalDevice.separatePresentQueue)
+    {
+        vkDestroyCommandPool(logicalDevice.device, presentCmdPool, nullptr);
+    }
+}
+
+void VulkanManager::displayInfo()
+{
+    uint32 extensionCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
+
+    std::vector<VkExtensionProperties> extensions(extensionCount);
+    
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
+
+    std::string availableExtensionsStr = "\n\nAvailable Extensions: ";
+    for(VkExtensionProperties &extension : extensions)
+    {
+        availableExtensionsStr.append("\n\t");
+        availableExtensionsStr.append(extension.extensionName);
+        availableExtensionsStr.append("\n");
+    }
+    
+    LOGI(availableExtensionsStr);
+}
+
+VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, 
+                                      const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, 
+                                      const VkAllocationCallbacks* pAllocator, 
+                                      VkDebugUtilsMessengerEXT* pDebugMessenger) 
+{
+    auto func = (PFN_vkCreateDebugUtilsMessengerEXT) 
+                vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+
+    if (func != nullptr) 
+    {
+        return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+    } 
+    else 
+    {
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
+}
+
+void DestroyDebugUtilsMessengerEXT(VkInstance instance, 
+                                   VkDebugUtilsMessengerEXT debugMessenger, 
+                                   const VkAllocationCallbacks* pAllocator) 
+{
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) 
+                 vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+
+    if (func != nullptr) 
+    {
+        func(instance, debugMessenger, pAllocator);
+    }
+}
+
+void VulkanManager::initDebugMessenger()
+{
+    if(!config.enableValidationLayers || (config.ptrDebugMessenger == nullptr))
+    {
+        return;
+    }
+    
+    VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+
+    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
+                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+
+    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+
+    createInfo.pfnUserCallback = config.ptrDebugMessenger;
+
+    VK_CHECK(CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger));
 }
 
 
@@ -189,25 +267,43 @@ void VulkanManager::initInstance()
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = config.appName.data();
-    appInfo.applicationVersion = 1;
-    appInfo.engineVersion = 1;
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.apiVersion = VK_API_VERSION_1_2;
 
-    VkInstanceCreateInfo createInfo = {};
+    VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
 
-    createInfo.enabledExtensionCount = (uint32)(config.deviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = config.deviceExtensions.data();
+    createInfo.enabledExtensionCount = (uint32)(config.instanceExtensions.size());
+    createInfo.ppEnabledExtensionNames = config.instanceExtensions.data();
 
     if(config.enableValidationLayers)
     {
         createInfo.enabledLayerCount = (uint32)(config.validationLayers.size());
         createInfo.ppEnabledLayerNames = config.validationLayers.data();
+
+        VkDebugUtilsMessengerCreateInfoEXT debugMessengerInfo;
+        debugMessengerInfo = {};
+        debugMessengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+
+        debugMessengerInfo.messageSeverity = 
+                                             //VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                             VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
+                                             VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+
+        debugMessengerInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
+                                         VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
+                                         VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+
+        debugMessengerInfo.pfnUserCallback = config.ptrDebugMessenger;
+        
+        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *) &debugMessengerInfo;
     }
     else
     {
         createInfo.enabledLayerCount = 0;
+        createInfo.pNext = nullptr;
     }
 
     VK_CHECK(vkCreateInstance(&createInfo, nullptr, &instance));
@@ -365,7 +461,8 @@ void VulkanManager::initBuffer(VkDeviceSize size,
 void VulkanManager::initImage(uint32 width, uint32 height,
                               VkFormat format, VkImageTiling tiling, 
                               VkImageUsageFlags usage, VkMemoryPropertyFlags propertyFlags, 
-                              VkImage &image, VkDeviceMemory &imageMemory)
+                              VkImageLayout initialLayout, VkImage &image, 
+                              VkDeviceMemory &imageMemory)
 {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -377,7 +474,7 @@ void VulkanManager::initImage(uint32 width, uint32 height,
     imageInfo.arrayLayers = 1;
     imageInfo.format = format;
     imageInfo.tiling = tiling;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.initialLayout = initialLayout;
     imageInfo.usage = usage;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -410,7 +507,7 @@ void VulkanManager::setImageLayout(VkImage image,
 
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.pNext = NULL;
+    barrier.pNext = nullptr;
     barrier.srcAccessMask = srcAccessMask;
     barrier.dstAccessMask = 0;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -418,7 +515,7 @@ void VulkanManager::setImageLayout(VkImage image,
     barrier.oldLayout = oldLayout;
     barrier.newLayout = newLayout;
     barrier.image = image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.aspectMask = aspectMask;
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
@@ -465,6 +562,8 @@ void VulkanManager::initVulkanTexture(uint8 *texPixels,
                                       VkDeviceMemory &stagingBufferMemory, 
                                       VulkanTexture &texture)
 {
+    assert((texPixels != nullptr) && (texWidth > 0) && (texWidth > 0));
+
     //4 bytes per pixel;
     VkDeviceSize imgSize = texWidth * texHeight * 4;
 
@@ -487,7 +586,10 @@ void VulkanManager::initVulkanTexture(uint8 *texPixels,
     initImage(texWidth, texHeight,
               config.texFormat, VK_IMAGE_TILING_OPTIMAL,
               VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
-              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture.image, texture.mem);
+              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_IMAGE_LAYOUT_UNDEFINED, 
+              texture.image, texture.mem);
+    
+    texture.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     setImageLayout(texture.image,
                    VK_IMAGE_ASPECT_COLOR_BIT,
@@ -569,9 +671,11 @@ void VulkanManager::initVulkanTexture(uint8 *texPixels,
 
 void VulkanManager::freeVulkanTexture(VulkanTexture &tex)
 {
-    vkFreeMemory(logicalDevice.device, tex.mem, nullptr);
+    if(tex.sampler) vkDestroySampler(logicalDevice.device, tex.sampler, nullptr);
+    if(tex.view) vkDestroyImageView(logicalDevice.device, tex.view, nullptr);
     if(tex.image) vkDestroyImage(logicalDevice.device, tex.image, nullptr);
     if(tex.buffer) vkDestroyBuffer(logicalDevice.device, tex.buffer, nullptr);
+    if(tex.mem) vkFreeMemory(logicalDevice.device, tex.mem, nullptr);
 }
 
 //==================================== PhysicalDevice ===================================
@@ -690,8 +794,8 @@ void Swapchain::querySupportInfo(VkPhysicalDevice physicalDevice,
                                  VkSurfaceKHR surface)
 {
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice,
-                                                surface,
-                                                &surfaceCapabilities);
+                                              surface,
+                                              &surfaceCapabilities);
 
     uint32 surfaceFormatCount;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &surfaceFormatCount, nullptr);
@@ -892,15 +996,14 @@ void Swapchain::init(VkPhysicalDevice physicalDevice,
                      VkPresentModeKHR preferredPresentMode,
                      uint32 surfaceWidth, uint32 surfaceHeight)
 {
-    device = &logicalDevice;
+    swapchain = VK_NULL_HANDLE;
     querySupportInfo(physicalDevice, surface);
     chooseSettings(preferredFormat, preferredPresentMode, surfaceWidth, surfaceHeight);
 }
 
 void Swapchain::destroy(VkDevice &device, VkCommandPool &cmdPool)
 {
-    
-    for(uint32 i = 0; i < imageCount; i++)
+    for(size_t i = 0; i < imageResources.size(); i++)
     {
         vkDestroyFramebuffer(device, imageResources[i].framebuffer, nullptr);
 
@@ -913,7 +1016,7 @@ void Swapchain::destroy(VkDevice &device, VkCommandPool &cmdPool)
         vkUnmapMemory(device, imageResources[i].uniformMemory);
         vkFreeMemory(device, imageResources[i].uniformMemory, nullptr);
     }
-         
+          
     vkDestroySwapchainKHR(device, this->swapchain, nullptr);
 }
 

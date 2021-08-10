@@ -1,6 +1,6 @@
 #include "textured_cube.h"
 #include "fstream"
-     
+
 const std::vector<float> vertices = 
 {
     -1.0f,-1.0f,-1.0f,  // -X side
@@ -91,8 +91,41 @@ const std::vector<float> texCoords =
     1.0f, 0.0f,
 }; 
 
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                                    VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                                    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                                                    void* pUserData) 
+{
+    std::string output("\n[VULKAN] ");
+    output.append(pCallbackData->pMessage);
+    LOGI(output);
+    
+    return VK_FALSE;
+}
+
+VkSurfaceFormatKHR pickSurfaceFormat(const VkSurfaceFormatKHR *surfaceFormats, uint32_t count) {
+    // Prefer non-SRGB formats...
+    for (uint32_t i = 0; i < count; i++) {
+        const VkFormat format = surfaceFormats[i].format;
+
+        if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_B8G8R8A8_UNORM ||
+            format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 ||
+            format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+            return surfaceFormats[i];
+        }
+    }
+
+    LOGI("Can't find our preferred formats.Falling back to first exposed format. Rendering may be incorrect.\n");
+
+    assert(count >= 1);
+    return surfaceFormats[0];
+}
+
+
 void Demo::startUp()
 {
+    isInitialized = false;
+    isMinimized = false;
     isPrepared = false;
 
     //geometry data
@@ -104,6 +137,9 @@ void Demo::startUp()
     vulkanTextures.resize(1);
     textures[0].load(std::string("textures/will_confia.png"));
 
+    //======== window ===========
+    window.init(this, L"Vulkan Demo - Textured Cube", 1280, 720);
+
     //====== Vulkan configuration ===== 
     VulkanConfig vulkanConfig{};
     vulkanConfig.appName = "Textured Cube";
@@ -112,27 +148,55 @@ void Demo::startUp()
     vulkanConfig.enableValidationLayers = true;
     vulkanConfig.validationLayers.push_back("VK_LAYER_KHRONOS_validation");
 
-    //--- device extensions ---
-    vulkanConfig.deviceExtensions.push_back("VK_KHR_swapchain");
+    //--- extensions ---
+    vulkanConfig.instanceExtensions = {
+    "VK_KHR_device_group_creation",
+	"VK_KHR_display",
+	"VK_KHR_external_fence_capabilities",
+	"VK_KHR_external_memory_capabilities",
+	"VK_KHR_external_semaphore_capabilities",
+	"VK_KHR_get_display_properties2",
+	"VK_KHR_get_physical_device_properties2",
+	"VK_KHR_get_surface_capabilities2",
+	"VK_KHR_surface",
+	"VK_KHR_surface_protected_capabilities",
+	"VK_KHR_win32_surface",
+	"VK_EXT_debug_report",
+	"VK_EXT_debug_utils",
+    "VK_EXT_swapchain_colorspace",
+	"VK_NV_external_memory_capabilities",
+    };
+    
+    vulkanConfig.deviceExtensions = {"VK_KHR_swapchain"};
+    
+    // --- physical device features to enable ------
+    vulkanConfig.physDeviceFeaturesToEnable.samplerAnisotropy = VK_TRUE;
 
     //--- formats ---
     vulkanConfig.preferredDepthFormat = VK_FORMAT_D16_UNORM;
-    vulkanConfig.preferredPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
-    vulkanConfig.preferredSurfaceFormat.format = VK_FORMAT_B8G8R8A8_SRGB;
+    vulkanConfig.preferredPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    vulkanConfig.preferredSurfaceFormat.format = VK_FORMAT_B8G8R8A8_UNORM;
     vulkanConfig.preferredSurfaceFormat.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     vulkanConfig.texFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
-    //======== window ===========
-    window.init(this, L"Vulkan Demo - Textured Cube", 1280, 720);
+    vulkanConfig.ptrDebugMessenger = debugCallback;
     
-    //======== camera ===========
-    camera.pos = {0.0f, 3.0f, 5.0f};
-    camera.lookAt(glm::vec3(0.0f, 0.0f, 0.0f));
-    
-    camera.calcProjMatrix();
-    //======== Vulkan Manager =========
     vulkanManager.isMinimized = &isMinimized;
     vulkanManager.startUp(&window, vulkanConfig);
+    //======== camera ===========
+    glm::vec3 cameraPos = glm::vec3(0.0f, 3.0f, 5.0f);
+    glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+
+    float _near = 0.1f;
+    float _far = 100.0f;
+    float right = 5.0f;
+    float left = -5.0f;
+    float top = 5.0f;
+    float bottom = -5.0f;
+    camera.init(cameraPos, cameraTarget,
+                _near, _far, right, left, top, bottom);
+    
+    isInitialized = true;
 }
 
 void Demo::shutDown()
@@ -201,14 +265,8 @@ void Demo::prepare()
     vulkanManager.initDepthImage(vulkanManager.config.preferredDepthFormat,
                                  window.width, window.height); 
 
-    //init textures
-    vulkanManager.initVulkanTexture(textures[0].pixels, 
-                                    textures[0].width, 
-                                    textures[0].height,
-                                    stagingTexture.buffer,
-                                    stagingTexture.mem,
-                                    vulkanTextures[0]);
-
+    initStagingTexture();
+    initTextures();
     initCubeDataBuffers();
     initDescriptorLayout();
     initRenderPass();
@@ -233,7 +291,7 @@ void Demo::prepare()
                                      nullptr,
                                      &vulkanManager.presentCmdPool));
         
-        VkCommandBufferAllocateInfo presentCmdAllocInfo;
+        VkCommandBufferAllocateInfo presentCmdAllocInfo{};
         presentCmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         presentCmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         presentCmdAllocInfo.commandPool = vulkanManager.presentCmdPool;
@@ -255,36 +313,166 @@ void Demo::prepare()
     for(uint32 i = 0; i < vulkanManager.swapchain.imageCount; i++)
     {
         currBufferIndex = i;
+        recordDrawCommands(vulkanManager.swapchain.imageResources[i].cmd);
     } 
     
     //flush pipeline commands before beginning the render loop 
     flushInitCmd();
-    if(stagingTexture.buffer) vulkanManager.freeVulkanTexture(stagingTexture);
+
+    vulkanManager.freeVulkanTexture(stagingTexture);
     
     currBufferIndex = 0;
     isPrepared = true;
 }
 
+void Demo::initStagingTexture()
+{
+    stagingTexture = {};
+    stagingTexture.width = textures[0].width;
+    stagingTexture.height = textures[0].height;
+    VkDeviceSize imgSize = stagingTexture.width* stagingTexture.height * 4;
+    
+    vulkanManager.initBuffer(imgSize,
+                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                             stagingTexture.buffer, 
+                             stagingTexture.mem); 
+}
+
+void Demo::initTextures()
+{
+
+    assert((textures[0].pixels != nullptr) && (textures[0].height > 0) && (textures[0].width > 0));
+    assert((stagingTexture.buffer != VK_NULL_HANDLE) && (stagingTexture.mem != nullptr));
+
+    //4 bytes per pixel;
+    uint32 texWidth = textures[0].width;
+    uint32 texHeight = textures[0].height;
+    uint8 *texPixels = textures[0].pixels;
+    VkDeviceSize imgSize = texWidth * texHeight * 4;
+
+    //copy texture data to staging buffer
+    void *data;
+    vkMapMemory(vulkanManager.logicalDevice.device, stagingTexture.mem, 0, imgSize, 0, &data);
+    memcpy(data, texPixels, (size_t)(imgSize));
+    vkUnmapMemory(vulkanManager.logicalDevice.device, stagingTexture.mem);
+
+    //init texture image 
+
+    VkMemoryPropertyFlags requiredImageProperties = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    vulkanManager.initImage(texWidth, texHeight,
+                            vulkanManager.config.texFormat, VK_IMAGE_TILING_OPTIMAL,
+                            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_IMAGE_LAYOUT_PREINITIALIZED,
+                            vulkanTextures[0].image, vulkanTextures[0].mem);
+
+    vulkanTextures[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    vulkanManager.setImageLayout(vulkanTextures[0].image,
+                                 VK_IMAGE_ASPECT_COLOR_BIT,
+                                 VK_IMAGE_LAYOUT_PREINITIALIZED,
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+                                 VK_ACCESS_NONE_KHR,
+                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    VkBufferImageCopy copyRegion{};
+    copyRegion.bufferOffset = 0; 
+    copyRegion.bufferRowLength = 0; //means texture is tighly packed
+    copyRegion.bufferImageHeight = 0; //means texture is tighly packed
+
+    copyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.imageSubresource.mipLevel = 0;
+    copyRegion.imageSubresource.baseArrayLayer = 0;
+    copyRegion.imageSubresource.layerCount = 1;
+
+    copyRegion.imageOffset = {0, 0, 0};
+    copyRegion.imageExtent = {(uint32)texWidth, (uint32)texHeight, 1};
+
+    vkCmdCopyBufferToImage(vulkanManager.cmdBuffer, 
+                           stagingTexture.buffer, 
+                           vulkanTextures[0].image, 
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           1,
+                           &copyRegion);
+
+    vulkanManager.setImageLayout(vulkanTextures[0].image,
+                                 VK_IMAGE_ASPECT_COLOR_BIT,
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                 vulkanTextures[0].imageLayout, 
+                                 VK_ACCESS_TRANSFER_WRITE_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    //--- sampler ---
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+    samplerInfo.anisotropyEnable = VK_TRUE;
+    samplerInfo.maxAnisotropy = vulkanManager.physicalDevice.properties.limits.maxSamplerAnisotropy;
+
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_NEVER;
+
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+    
+    VK_CHECK(vkCreateSampler(vulkanManager.logicalDevice.device, 
+                             &samplerInfo, nullptr, &vulkanTextures[0].sampler));
+
+    //--- image view ----
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = vulkanTextures[0].image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = vulkanManager.config.texFormat;
+
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+    
+    VK_CHECK(vkCreateImageView(vulkanManager.logicalDevice.device, 
+                               &viewInfo, nullptr, &vulkanTextures[0].view));
+
+}
 
 void Demo::initCubeDataBuffers()
 {
     VS_UBO data{};
-    
+
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     data.mvp = camera.projMatrix * camera.viewMatrix * modelMatrix;
 
     //vulkan expects the y coord to be flipped
     data.mvp[1][1] *= -1;
 
-    for(size_t i = 0; i < vertexData.size(); i++)
+    for(size_t i = 0; i < (12 * 3); i++)
     {
-        data.pos = glm::vec4(vertexData[i * 3],
-                             vertexData[i * 3 + 1],
-                             vertexData[i * 3 + 2],
-                             1.0f);
+        assert((i * 3 + 2) < vertexData.size());
+        data.pos[i] = glm::vec4(vertexData[i * 3],
+                                vertexData[i * 3 + 1],
+                                vertexData[i * 3 + 2],
+                                1.0f);
 
-        data.uv = glm::vec2(texCoords[i * 2],
-                            texCoords[i * 2 + 1]);
+        data.attr[i] = glm::vec4(texCoords[i * 2],
+                                 texCoords[i * 2 + 1],
+                                 0.0f,
+                                 0.0f);
     }
 
     for(size_t i = 0; i < vulkanManager.swapchain.imageResources.size(); i++) 
@@ -302,7 +490,6 @@ void Demo::initCubeDataBuffers()
 
         memcpy(vulkanManager.swapchain.imageResources[i].uniformMemoryPtr, &data, sizeof(data));
     }
-
 }
 
 void Demo::initDescriptorLayout()
@@ -451,7 +638,7 @@ void Demo::initPipeline()
                                     &pipelineLayoutInfo, 
                                     nullptr, 
                                     &vulkanManager.pipelineLayout));
-
+    
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -480,6 +667,7 @@ void Demo::initPipeline()
                                         VK_COLOR_COMPONENT_G_BIT |
                                         VK_COLOR_COMPONENT_B_BIT |
                                         VK_COLOR_COMPONENT_A_BIT;
+    blendAttachment.blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo blendStateInfo{};
     blendStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -497,13 +685,14 @@ void Demo::initPipeline()
     depthInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthInfo.depthTestEnable = VK_TRUE;
     depthInfo.depthWriteEnable = VK_TRUE;
-    depthInfo.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     depthInfo.depthBoundsTestEnable = VK_FALSE;
     depthInfo.minDepthBounds = 0.0f;
     depthInfo.maxDepthBounds = 1.0f;
     depthInfo.stencilTestEnable = VK_FALSE;
-    depthInfo.front = {};
-    depthInfo.back = {};
+    depthInfo.back.failOp = VK_STENCIL_OP_KEEP;
+    depthInfo.back.passOp = VK_STENCIL_OP_KEEP;
+    depthInfo.front = depthInfo.back;
 
     //specify no multisampling
     VkPipelineMultisampleStateCreateInfo multisampleInfo{};
@@ -545,7 +734,7 @@ void Demo::initPipeline()
     VK_CHECK(vkCreateShaderModule(vulkanManager.logicalDevice.device, 
                                   &vertShaderCreateInfo, 
                                   nullptr, 
-            &vertShaderModule));
+                                  &vertShaderModule));
     VK_CHECK(vkCreateShaderModule(vulkanManager.logicalDevice.device, 
                                   &fragShaderCreateInfo, 
                                   nullptr, 
@@ -567,6 +756,7 @@ void Demo::initPipeline()
     
     //init pipeline cache
     VkPipelineCacheCreateInfo pipelineCacheInfo{};
+    pipelineCacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
     VK_CHECK(vkCreatePipelineCache(vulkanManager.logicalDevice.device,
                                    &pipelineCacheInfo,
                                    nullptr,
@@ -701,6 +891,7 @@ void Demo::initDescriptorSet()
         VK_CHECK(vkAllocateDescriptorSets(vulkanManager.logicalDevice.device,
                                           &allocInfo,
                                           &vulkanManager.swapchain.imageResources[i].descriptorSet));
+
         bufferInfo.buffer = vulkanManager.swapchain.imageResources[i].uniformBuffer;
         writeDescriptorSets[0].dstSet = vulkanManager.swapchain.imageResources[i].descriptorSet;
         writeDescriptorSets[1].dstSet = vulkanManager.swapchain.imageResources[i].descriptorSet;
@@ -714,7 +905,7 @@ void Demo::initFramebuffers()
     VkImageView attachments[2] = {};
     attachments[1] = vulkanManager.depth.view;
 
-    VkFramebufferCreateInfo fbInfo; 
+    VkFramebufferCreateInfo fbInfo{}; 
     fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     fbInfo.renderPass = vulkanManager.renderPass;
     fbInfo.attachmentCount = 2;
@@ -769,20 +960,35 @@ void Demo::recordDrawCommands(VkCommandBuffer cmdBuffer)
                             &vulkanManager.swapchain.imageResources[currBufferIndex].descriptorSet,
                             0,
                             nullptr);
+    
+    //viewport
     VkViewport vp{};
-    vp.width = (float) vulkanManager.swapchain.imageExtent.width;
-    vp.height = (float) vulkanManager.swapchain.imageExtent.height;
+    float demoHeight = (float) vulkanManager.swapchain.imageExtent.height;
+    float demoWidth = (float) vulkanManager.swapchain.imageExtent.height;
+    float vpDimension = 0.0f;
+    if(demoWidth < demoHeight)
+    {
+        vpDimension = demoWidth;    
+        vp.y = (demoHeight - demoWidth) / 2.0f;
+    }
+    else
+    {
+        vpDimension = demoHeight;
+        vp.x = (demoWidth - demoHeight) / 2.0f;
+    }
+    vp.height = vpDimension;
+    vp.width = vpDimension;
     vp.minDepth = 0.0f;
     vp.maxDepth = 1.0f;
-    
+    vkCmdSetViewport(cmdBuffer, 0, 1, &vp);
+
+    //scissor 
     VkRect2D scissor{};
     scissor.extent.width = vulkanManager.swapchain.imageExtent.width;
     scissor.extent.height = vulkanManager.swapchain.imageExtent.height;
-
-    vkCmdSetViewport(cmdBuffer, 0, 1, &vp);
     vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
     
-    vkCmdDraw(cmdBuffer, (uint32)(vertexData.size()), 1, 0, 0);
+    vkCmdDraw(cmdBuffer, (uint32)(vertexData.size()/3), 1, 0, 0);
 
     //NOTE(): Ending the render pass changes the image's layout from
     //        COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR
@@ -897,7 +1103,10 @@ void Demo::resize()
 
 void Demo::updateDataBuffer()
 {
-    
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    glm::mat4 mvp = camera.projMatrix * camera.viewMatrix * modelMatrix;
+    memcpy(vulkanManager.swapchain.imageResources[currBufferIndex].uniformMemoryPtr,
+           (const void *)&mvp[0][0], sizeof(mvp));
 }
 
 void Demo::draw()
@@ -978,7 +1187,7 @@ void Demo::draw()
         submitInfo.pSignalSemaphores = &vulkanManager.imageOwnershipSemaphores[frameIndex];
         
         
-        VK_CHECK(vkQueueSubmit(vulkanManager.logicalDevice.graphicsQueue, 
+        VK_CHECK(vkQueueSubmit(vulkanManager.logicalDevice.presentQueue, 
                                1, &submitInfo, 
                                nullFence));
     }
@@ -1042,12 +1251,24 @@ void Texture::load(std::string filepath)
 {
     int texWidth, texHeight, texChannels;
     pixels = stbi_load(filepath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+
+    assert(texWidth > 0);
+    assert(texHeight > 0);
+    assert(texChannels > 0);
+
+    width = (uint32)(texWidth);
+    height = (uint32)(texHeight);
+    channels = (uint32)(texChannels);
+    filepath = filepath;
+
 }
 
 void Texture::free()
 {
     width = 0;
     height = 0;
+    channels = 0;
+    filepath = "";
     stbi_image_free(pixels);
 }
 
@@ -1073,22 +1294,30 @@ void loadShaderModule(std::string &filename, std::vector<char> &buffer)
     shaderFile.close();
 }
 
+// ================================ Debug Callback =============================
+
 //=================== Windows WndProc Callback ===========================
 LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
                                       WPARAM wParam,
-                    LPARAM lParam)
+                                      LPARAM lParam)
 {
-    LRESULT result = 0;
-
     switch(uMsg)
     {
         case WM_CLOSE:
         {
-            PostQuitMessage(1);
+            DestroyWindow(this->handle);
+            return 0;
         } break;
+        
+        case WM_DESTROY:
+        {
+            PostQuitMessage(0);
+            return 0;
+        }
         
         case WM_PAINT:
         {
+            if(!demo->isInitialized) return 0;
             demo->render();
         } break; 
         
@@ -1105,6 +1334,8 @@ LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
 
         case WM_SIZE:
         {
+            if(!demo->isInitialized) return 0;
+
             //Resize to the new window size, expect when it was minimized.
             //Vulkan doesn't support images or swapchains with width and height = 0
             if(wParam != SIZE_MINIMIZED)
@@ -1128,12 +1359,10 @@ LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
 
         default:
         {
-            result = DefWindowProcA(handle, uMsg, wParam, lParam);
         } break;
-        
-        
     }
-    return result;
+    
+    return DefWindowProcA(handle, uMsg, wParam, lParam);
 }
 
 // ======================= Main =====================
@@ -1143,6 +1372,16 @@ int WINAPI WinMain(HINSTANCE hInstance,
                    LPSTR pCmdLine, 
                    int nCmdShow)
 {
+    //setup logger 
+    auto msvcSink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
+    auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("log/debug_output.txt", false);
+
+    std::vector<spdlog::sink_ptr> sinks{msvcSink, fileSink};
+    auto _logger = std::make_shared<spdlog::logger>("_logger", begin(sinks), end(sinks));
+    spdlog::register_logger(_logger);
+
+    //-----------
+    
     Demo demo;     
     demo.startUp();
     
@@ -1150,7 +1389,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
 
     MSG msg{};
 
-    bool isRunning = false;
+    bool isRunning = true;
     while(isRunning)
     {
         if(demo.isPaused)
@@ -1172,7 +1411,6 @@ int WINAPI WinMain(HINSTANCE hInstance,
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-        
         RedrawWindow(demo.window.handle, nullptr, nullptr, RDW_INTERNALPAINT);
     }
 
