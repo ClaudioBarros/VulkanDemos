@@ -2,6 +2,7 @@
 #define CAMERA_H
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 struct Camera
 {
@@ -24,21 +25,14 @@ struct Camera
 	} frustum;
 
 	void init(glm::vec3 position, glm::vec3 target,
-			  float near_,  float far_,
-			  float right, float left,
-			  float top,   float bottom)
+			  float yFov, float aspect, float n, float f) 
 	{
-		pos = position;
-		lookAt(target);
-
-		frustum.near_ = near_;
-		frustum.far_ = far_;
-		frustum.right = right;
-		frustum.left = left;
-		frustum.top = top;
-		frustum.bottom = bottom;
+		viewMatrix = glm::lookAt(position,
+                                 target, 
+                            	 glm::vec3(0.0f, 1.0f, 0.0f));
 		
-		calcProjMatrix();
+		projMatrix = glm::perspective(yFov, aspect, n, f);
+		projMatrix[1][1] *= -1;
 	}
 
 	void lookAt(glm::vec3 target)
@@ -86,6 +80,7 @@ struct Camera
 							   0.0f, 0.0f,  m22,   m23,
 							   0.0f, 0.0f, -1.0f,  0.0f);
 	}
+
 };
 
 #endif

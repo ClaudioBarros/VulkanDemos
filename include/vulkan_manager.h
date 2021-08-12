@@ -132,27 +132,25 @@ struct Swapchain
 	uint32 imageCount;
 	std::vector<SwapchainImageResources> imageResources;
 
-	private:
 
-		void querySupportInfo(VkPhysicalDevice physicalDevice,  
-							  VkSurfaceKHR surface);
+	void querySupportInfo(VkPhysicalDevice physicalDevice,  
+						  VkSurfaceKHR surface);
 
-		void chooseSettings(VkSurfaceFormatKHR preferredFormat,
-							VkPresentModeKHR preferredPresentMode,
-							uint32 width, uint32 height);
+	void chooseSettings(VkSurfaceFormatKHR preferredFormat,
+						VkPresentModeKHR preferredPresentMode,
+						uint32 *width, uint32 *height);
 
-	public:
 
-		void init(VkPhysicalDevice physicalDevice,  
-				  VkDevice logicalDevice,
-				  VkSurfaceKHR surface,
-				  VkSurfaceFormatKHR preferredFormat,
-				  VkPresentModeKHR preferredPresentMode,
-				  uint32 surfaceWidth, uint32 surfaceHeight);
+	void queryInfoAndChooseSettings(VkPhysicalDevice physicalDevice,  
+									VkDevice logicalDevice,
+									VkSurfaceKHR surface,
+									VkSurfaceFormatKHR preferredFormat,
+									VkPresentModeKHR preferredPresentMode,
+									uint32 *demoWidth, uint32 *demoHeight);
 		
-		void createSwapchainAndImageResources(VkSurfaceKHR surface, VkDevice logicalDevice);
+	void createSwapchainAndImageResources(VkSurfaceKHR surface, VkDevice logicalDevice);
 
-		void destroy(VkDevice &device, VkCommandPool &cmdPool);
+	void destroy(VkDevice &device, VkCommandPool &cmdPool);
 };
 
 //------------------------
@@ -207,7 +205,7 @@ struct VulkanManager
 	VulkanManager(){} //do nothing
 	~VulkanManager(){} //do nothing
 
-	void startUp(Win32Window *window, VulkanConfig config);
+	void startUp(Win32Window *window, VulkanConfig config, uint32 *demoWidth, uint32 *demoHeight);
 	void shutDown();
 	
 	void prepareForResize();

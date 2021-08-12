@@ -1,6 +1,9 @@
 #include "vulkan_manager.h"
 
-void VulkanManager::startUp(Win32Window *window, VulkanConfig vulkanConfig)
+void VulkanManager::startUp(Win32Window *window, 
+                            VulkanConfig vulkanConfig, 
+                            uint32 *demoWidth, 
+                            uint32 *demoHeight)
 {
     this->config = vulkanConfig;
     displayInfo();
@@ -28,11 +31,12 @@ void VulkanManager::startUp(Win32Window *window, VulkanConfig vulkanConfig)
     initSyncPrimitives();
 
     //--------------- SWAPCHAIN ------------------
-    swapchain.init(physicalDevice.device, 
-                   logicalDevice.device, surface, 
-                   config.preferredSurfaceFormat,
-                   config.preferredPresentMode,
-                   window->width, window->height);
+    swapchain.swapchain = VK_NULL_HANDLE;
+    swapchain.queryInfoAndChooseSettings(physicalDevice.device, 
+                                         logicalDevice.device, surface, 
+                                         config.preferredSurfaceFormat,
+                                         config.preferredPresentMode,
+                                         demoWidth, demoHeight);
 
     //--------------- COMMAND POOL ---------------
     initCmdPool();
@@ -96,9 +100,8 @@ void VulkanManager::prepareForResize()
 {
     vkDestroyPipeline(logicalDevice.device, pipeline, nullptr);
     vkDestroyPipelineCache(logicalDevice.device, pipelineCache, nullptr);
-    vkDestroyPipelineLayout(logicalDevice.device, pipelineLayout, nullptr); 
-
     vkDestroyRenderPass(logicalDevice.device, renderPass, nullptr);
+    vkDestroyPipelineLayout(logicalDevice.device, pipelineLayout, nullptr); 
 
     vkDestroyImageView(logicalDevice.device, depth.view, nullptr);
     vkDestroyImage(logicalDevice.device, depth.image, nullptr);
@@ -834,7 +837,7 @@ void Swapchain::querySupportInfo(VkPhysicalDevice physicalDevice,
 
 void Swapchain::chooseSettings(VkSurfaceFormatKHR preferredFormat,
                                VkPresentModeKHR preferredPresentMode,
-                               uint32 width, uint32 height)
+                               uint32 *demoWidth, uint32 *demoHeight)
 {
     //select surface format:
     bool wasSelected = false;
@@ -882,37 +885,39 @@ void Swapchain::chooseSettings(VkSurfaceFormatKHR preferredFormat,
     {
         //if the surface size is defined (other than 0xFFFFFFFF), the swapchain size must match.
         imageExtent = surfaceCapabilities.currentExtent;
+        *demoWidth = surfaceCapabilities.currentExtent.width;
+        *demoHeight = surfaceCapabilities.currentExtent.height;
     }
     else
     {
         //if the surface size is undefined, the size should be set to the size of the requested
         //images, which should fit within the minimum and maximum values 
 
-        imageExtent.width = width;
-        imageExtent.height = height;
+        imageExtent.width = *demoWidth;
+        imageExtent.height = *demoHeight;
 
-        if(width < surfaceCapabilities.minImageExtent.width)
+        if(imageExtent.width < surfaceCapabilities.minImageExtent.width)
         {
             imageExtent.width = surfaceCapabilities.minImageExtent.width;
         }
-        else if(width > surfaceCapabilities.maxImageExtent.width)
+        else if(imageExtent.width > surfaceCapabilities.maxImageExtent.width)
         {
             imageExtent.width = surfaceCapabilities.maxImageExtent.width;
         }
 
-        if(height < surfaceCapabilities.minImageExtent.height)
+        if(imageExtent.height < surfaceCapabilities.minImageExtent.height)
         {
             imageExtent.height = surfaceCapabilities.minImageExtent.height;
         }
-        else if(height > surfaceCapabilities.maxImageExtent.height)
+        else if(imageExtent.height > surfaceCapabilities.maxImageExtent.height)
         {
             imageExtent.height = surfaceCapabilities.maxImageExtent.height;
         }
-    }
+    }    
 }
 
 void Swapchain::createSwapchainAndImageResources(VkSurfaceKHR surface, 
-                        VkDevice logicalDevice)
+                                                 VkDevice logicalDevice)
 {
     VkSwapchainKHR oldSwapchain = swapchain;
     uint32 desiredNumImages = 3; //3 for triple-buffering
@@ -989,16 +994,15 @@ void Swapchain::createSwapchainAndImageResources(VkSurfaceKHR surface,
     }
 }
 
-void Swapchain::init(VkPhysicalDevice physicalDevice,  
-                     VkDevice logicalDevice,
-                     VkSurfaceKHR surface,
-                     VkSurfaceFormatKHR preferredFormat,
-                     VkPresentModeKHR preferredPresentMode,
-                     uint32 surfaceWidth, uint32 surfaceHeight)
+void Swapchain::queryInfoAndChooseSettings(VkPhysicalDevice physicalDevice,  
+                                           VkDevice logicalDevice,
+                                           VkSurfaceKHR surface,
+                                           VkSurfaceFormatKHR preferredFormat,
+                                           VkPresentModeKHR preferredPresentMode,
+                                           uint32 *demoWidth, uint32 *demoHeight)
 {
-    swapchain = VK_NULL_HANDLE;
     querySupportInfo(physicalDevice, surface);
-    chooseSettings(preferredFormat, preferredPresentMode, surfaceWidth, surfaceHeight);
+    chooseSettings(preferredFormat, preferredPresentMode, demoWidth, demoHeight);
 }
 
 void Swapchain::destroy(VkDevice &device, VkCommandPool &cmdPool)
@@ -1016,8 +1020,6 @@ void Swapchain::destroy(VkDevice &device, VkCommandPool &cmdPool)
         vkUnmapMemory(device, imageResources[i].uniformMemory);
         vkFreeMemory(device, imageResources[i].uniformMemory, nullptr);
     }
-          
-    vkDestroySwapchainKHR(device, this->swapchain, nullptr);
 }
 
 

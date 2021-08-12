@@ -51,6 +51,9 @@ struct Demo
 	uint32 currBufferIndex = 0;
 	int frameIndex = 0;	
 
+	uint32 width;
+	uint32 height;
+
 	bool isInitialized;
 	bool isMinimized;	
 	bool isPaused;

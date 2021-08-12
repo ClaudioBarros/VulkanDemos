@@ -128,6 +128,8 @@ void Demo::startUp()
     isMinimized = false;
     isPrepared = false;
 
+    this->width = 1280;
+    this->height = 720;
     //geometry data
     vertexData = vertices;
     uvData = texCoords; 
@@ -138,7 +140,7 @@ void Demo::startUp()
     textures[0].load(std::string("textures/will_confia.png"));
 
     //======== window ===========
-    window.init(this, L"Vulkan Demo - Textured Cube", 1280, 720);
+    window.init(this, L"Vulkan Demo - Textured Cube", this->width, this->height);
 
     //====== Vulkan configuration ===== 
     VulkanConfig vulkanConfig{};
@@ -182,19 +184,15 @@ void Demo::startUp()
     vulkanConfig.ptrDebugMessenger = debugCallback;
     
     vulkanManager.isMinimized = &isMinimized;
-    vulkanManager.startUp(&window, vulkanConfig);
+    vulkanManager.startUp(&window, vulkanConfig, &this->width, &this->height);
     //======== camera ===========
     glm::vec3 cameraPos = glm::vec3(0.0f, 3.0f, 5.0f);
+
     glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
 
-    float _near = 0.1f;
-    float _far = 100.0f;
-    float right = 5.0f;
-    float left = -5.0f;
-    float top = 5.0f;
-    float bottom = -5.0f;
-    camera.init(cameraPos, cameraTarget,
-                _near, _far, right, left, top, bottom);
+    float aspect = (float)(this->width) / 
+                   (float)(this->height); 
+    camera.init(cameraPos, cameraTarget, glm::radians(45.0f), aspect, 0.1, 100.0f);
     
     isInitialized = true;
 }
@@ -243,11 +241,15 @@ void Demo::prepare()
 
     VK_CHECK(vkBeginCommandBuffer(vulkanManager.cmdBuffer, &cmdBeginInfo));
 
-    vulkanManager.swapchain.createSwapchainAndImageResources(vulkanManager.surface,
-                                                             vulkanManager.logicalDevice.device);
+    vulkanManager.swapchain.queryInfoAndChooseSettings(vulkanManager.physicalDevice.device,
+                                                       vulkanManager.logicalDevice.device,
+                                                       vulkanManager.surface,
+                                                       vulkanManager.config.preferredSurfaceFormat,
+                                                       vulkanManager.config.preferredPresentMode,
+                                                       &this->width, &this->height);
     
-    if(vulkanManager.swapchain.imageExtent.width == 0 || 
-       vulkanManager.swapchain.imageExtent.height == 0)
+    if(this->width == 0 || 
+       this->height == 0)
     {
         isMinimized = true;
     }
@@ -255,15 +257,18 @@ void Demo::prepare()
     {
         isMinimized = false;
     }
-
+    
     if(isMinimized)
     {
         isPrepared = false;
         return;
-    }
+    }   
+
+    vulkanManager.swapchain.createSwapchainAndImageResources(vulkanManager.surface,
+                                                             vulkanManager.logicalDevice.device);
 
     vulkanManager.initDepthImage(vulkanManager.config.preferredDepthFormat,
-                                 window.width, window.height); 
+                                 this->width, this->height); 
 
     initStagingTexture();
     initTextures();
@@ -910,8 +915,8 @@ void Demo::initFramebuffers()
     fbInfo.renderPass = vulkanManager.renderPass;
     fbInfo.attachmentCount = 2;
     fbInfo.pAttachments = attachments;
-    fbInfo.width = vulkanManager.swapchain.imageExtent.width;
-    fbInfo.height = vulkanManager.swapchain.imageExtent.height;
+    fbInfo.width = this->width;
+    fbInfo.height = this->height;
     fbInfo.layers = 1;
     
     for(uint32 i = 0; i < vulkanManager.swapchain.imageCount; i++)
@@ -940,7 +945,8 @@ void Demo::recordDrawCommands(VkCommandBuffer cmdBuffer)
     rpBeginInfo.renderPass = vulkanManager.renderPass;
     rpBeginInfo.framebuffer = vulkanManager.swapchain.imageResources[currBufferIndex].framebuffer;
     rpBeginInfo.renderArea.offset = {0, 0};
-    rpBeginInfo.renderArea.extent = vulkanManager.swapchain.imageExtent;
+    rpBeginInfo.renderArea.extent.width = this->width;
+    rpBeginInfo.renderArea.extent.height = this->height;
     rpBeginInfo.clearValueCount = (uint32)(sizeof(clearValues) / sizeof(clearValues[0]));
     rpBeginInfo.pClearValues = clearValues;
 
@@ -963,29 +969,16 @@ void Demo::recordDrawCommands(VkCommandBuffer cmdBuffer)
     
     //viewport
     VkViewport vp{};
-    float demoHeight = (float) vulkanManager.swapchain.imageExtent.height;
-    float demoWidth = (float) vulkanManager.swapchain.imageExtent.height;
-    float vpDimension = 0.0f;
-    if(demoWidth < demoHeight)
-    {
-        vpDimension = demoWidth;    
-        vp.y = (demoHeight - demoWidth) / 2.0f;
-    }
-    else
-    {
-        vpDimension = demoHeight;
-        vp.x = (demoWidth - demoHeight) / 2.0f;
-    }
-    vp.height = vpDimension;
-    vp.width = vpDimension;
+    vp.width = (float) this->width;
+    vp.height = (float) this->height;
     vp.minDepth = 0.0f;
     vp.maxDepth = 1.0f;
     vkCmdSetViewport(cmdBuffer, 0, 1, &vp);
 
     //scissor 
     VkRect2D scissor{};
-    scissor.extent.width = vulkanManager.swapchain.imageExtent.width;
-    scissor.extent.height = vulkanManager.swapchain.imageExtent.height;
+    scissor.extent.width = this->width;
+    scissor.extent.height = this->height;
     vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
     
     vkCmdDraw(cmdBuffer, (uint32)(vertexData.size()/3), 1, 0, 0);
@@ -1080,7 +1073,7 @@ void Demo::resize()
     }
     
     //NOTE: To properly resize the window, the swapchain needs to be recreated,
-    //the command buffers need to be redone, etc.
+    //the command buffers need to be re-recorded, etc.
 
     isPrepared = false;
     vkDeviceWaitIdle(vulkanManager.logicalDevice.device);
@@ -1104,7 +1097,12 @@ void Demo::resize()
 void Demo::updateDataBuffer()
 {
     glm::mat4 modelMatrix = glm::mat4(1.0f);
-    glm::mat4 mvp = camera.projMatrix * camera.viewMatrix * modelMatrix;
+    glm::mat4 rotMat = glm::rotate(modelMatrix,
+                                   glm::radians(4.0f),
+                                   glm::vec3(0.0f, 1.0f, 0.0f));
+
+    glm::mat4 mvp = camera.projMatrix * camera.viewMatrix * rotMat;
+ 
     memcpy(vulkanManager.swapchain.imageResources[currBufferIndex].uniformMemoryPtr,
            (const void *)&mvp[0][0], sizeof(mvp));
 }
@@ -1342,12 +1340,10 @@ LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
             {
                 //The low-order word of lParam specifies the new width of the client area.
                 //The high-order word of lParam specifies the new height of the client area.
-                width = lParam & 0xFFFF;
-                height = (lParam & 0xFFFF0000) >> 16; 
+                demo->width = lParam & 0xFFFF;
+                demo->height = (lParam & 0xFFFF0000) >> 16; 
                 demo->resize();
             }
-            return 0;
-
         } break;
         
         case WM_KEYDOWN:
@@ -1400,6 +1396,8 @@ int WINAPI WinMain(HINSTANCE hInstance,
                 LOGE_EXIT("WaitMessage() failed on paused demo.");
             }
         }
+        
+        demo.updateDataBuffer();
     
         PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE);
         if(msg.message == WM_QUIT)
