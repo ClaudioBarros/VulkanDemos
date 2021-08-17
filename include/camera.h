@@ -7,80 +7,74 @@
 struct Camera
 {
 	glm::vec3 pos;
-	glm::vec3 dir;
+	glm::vec3 fwd;
 	glm::vec3 right;
 	glm::vec3 up;
+	glm::vec3 worldUp;
+
+	float yaw;
+	float pitch;
+
+	void init(glm::vec3 position, float yawAngle,  float pitchAngle) 
+	{
+		pos = position;
+		worldUp = glm::vec3(0, 1, 0);
+		up = glm::vec3(0, 1, 0);
+		yaw = yawAngle;
+		pitch = pitchAngle;
+		updateVectors();
+	}
 	
-	glm::mat4 viewMatrix;
-	glm::mat4 projMatrix;
-
-	struct Frustum
+	glm::mat4 getViewMatrix()
 	{
-		float near_;
-		float far_;
-		float right;
-		float left;
-		float top;
-		float bottom;
-	} frustum;
-
-	void init(glm::vec3 position, glm::vec3 target,
-			  float yFov, float aspect, float n, float f) 
+		return glm::lookAt(pos, (pos + fwd), up);
+	}
+	
+	void moveForward(float speed, float deltaTime)
 	{
-		viewMatrix = glm::lookAt(position,
-                                 target, 
-                            	 glm::vec3(0.0f, 1.0f, 0.0f));
-		
-		projMatrix = glm::perspective(yFov, aspect, n, f);
-		projMatrix[1][1] *= -1;
+		pos += speed * deltaTime * fwd; 
+	}
+	
+	void moveBackwards(float speed, float deltaTime)
+	{
+		pos -= speed * deltaTime * fwd; 
 	}
 
-	void lookAt(glm::vec3 target)
+	void moveLeft(float speed, float deltaTime)
 	{
-		dir = glm::normalize(pos - target);
-		
-		glm::vec3 temp(0.0f, 1.0f, 0.0f);
-		right = glm::normalize(glm::cross(temp, dir));
-		
-		up = glm::cross(dir, right);
-
-		glm::mat4 rotation(1.0f);	
-		glm::mat4 translation(1.0f);
-		
-		rotation[0][0] = right.x;
-		rotation[0][1] = right.y;
-		rotation[0][2] = right.z;
-		rotation[1][0] = up.x;
-		rotation[1][1] = up.y;
-		rotation[1][2] = up.z;
-		rotation[2][0] = dir.x;
-		rotation[2][1] = dir.y;
-		rotation[2][2] = dir.z;
-
-		translation[0][3] = -pos.x;
-		translation[1][3] = -pos.y;
-		translation[2][3] = -pos.z;
-		
-		viewMatrix = rotation * translation;
+		pos -= speed * deltaTime * right; 
 	}
 
-	void calcProjMatrix()
+	void moveRight(float speed, float deltaTime)
 	{
-		float m00 = (2.0f * frustum.near_)/(frustum.right - frustum.left);
-		float m02 = (frustum.right + frustum.left)/(frustum.right - frustum.left);
+		pos += speed * deltaTime * right; 
+	}
+	
+	void rotate(float xOffset, float yOffset, float sensitivity)
+	{
+		xOffset = xOffset * sensitivity;
+		yOffset = yOffset * sensitivity;
 		
-		float m11 = (2.0f * frustum.near_)/(frustum.top - frustum.bottom);
-		float m12 = (frustum.top + frustum.bottom)/(frustum.top - frustum.bottom);
+		yaw += xOffset;
+		pitch += yOffset;
 		
-		float m22 = -(frustum.far_ + frustum.near_)/(frustum.top - frustum.near_);
-		float m23 = (-2.0f * frustum.far_ * frustum.near_)/(frustum.far_ - frustum.near_);
-
-		projMatrix = glm::mat4(m00,  0.0f,  m02,   0.0f,
-		                       0.0f, m11,   m12,   0.0f,
-							   0.0f, 0.0f,  m22,   m23,
-							   0.0f, 0.0f, -1.0f,  0.0f);
+		if(pitch >  89.0f) pitch =  89.0f;
+		if(pitch < -89.0f) pitch = -89.0f;
+		
+		updateVectors();
 	}
 
+	void updateVectors()
+	{
+		glm::vec3 forward;
+		forward.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+		forward.y = sin(glm::radians(pitch));
+		forward.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+		fwd = glm::normalize(forward);
+		
+		right = glm::normalize(glm::cross(fwd, worldUp));
+		up = glm::normalize(glm::cross(right, fwd));
+	}	
 };
 
 #endif

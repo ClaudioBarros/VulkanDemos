@@ -130,6 +130,7 @@ void Demo::startUp()
 
     this->width = 1280;
     this->height = 720;
+    
     //geometry data
     vertexData = vertices;
     uvData = texCoords; 
@@ -137,10 +138,16 @@ void Demo::startUp()
     //load texture files
     textures.resize(1);
     vulkanTextures.resize(1);
-    textures[0].load(std::string("textures/will_confia.png"));
+    textures[0].load(std::string("textures/wooden_crate.png"));
 
+    //--------- mouse ----------
+    confineMouseCursorToWindow();
+    centerMouseCursor();
+    ShowCursor(FALSE);
+    mouseSensitivity = 0.6f;
     //======== window ===========
     window.init(this, L"Vulkan Demo - Textured Cube", this->width, this->height);
+    window.updateScreenCoordinates();
 
     //====== Vulkan configuration ===== 
     VulkanConfig vulkanConfig{};
@@ -186,14 +193,25 @@ void Demo::startUp()
     vulkanManager.isMinimized = &isMinimized;
     vulkanManager.startUp(&window, vulkanConfig, &this->width, &this->height);
     //======== camera ===========
-    glm::vec3 cameraPos = glm::vec3(0.0f, 3.0f, 5.0f);
+    movementSpeed = 20.0f;
+    glm::vec3 cameraPos = glm::vec3(0.0f, 2.0f, 7.0f);
 
-    glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-
-    float aspect = (float)(this->width) / 
-                   (float)(this->height); 
-    camera.init(cameraPos, cameraTarget, glm::radians(45.0f), aspect, 0.1, 100.0f);
+    float yaw = -90.0f;  
+    float pitch = 0.0f;
+    camera.init(cameraPos, yaw, pitch);
     
+    float yFov = glm::radians(45.0f);
+    float aspect = (float)(this->width) / (float)(this->height); 
+    float n = 0.1f;
+    float f = 100.0f;
+
+    modelMatrix = glm::mat4(1.0f);
+    
+    viewMatrix = camera.getViewMatrix();
+
+    projMatrix = glm::perspective(yFov, aspect, n, f),
+    projMatrix[1][1] *= -1;
+
     isInitialized = true;
 }
 
@@ -461,10 +479,11 @@ void Demo::initCubeDataBuffers()
     VS_UBO data{};
 
     glm::mat4 modelMatrix = glm::mat4(1.0f);
-    data.mvp = camera.projMatrix * camera.viewMatrix * modelMatrix;
+    viewMatrix = camera.getViewMatrix();
+    data.mvp = projMatrix * viewMatrix * modelMatrix;
 
     //vulkan expects the y coord to be flipped
-    data.mvp[1][1] *= -1;
+    //data.mvp[1][1] *= -1;
 
     for(size_t i = 0; i < (12 * 3); i++)
     {
@@ -981,7 +1000,8 @@ void Demo::recordDrawCommands(VkCommandBuffer cmdBuffer)
     scissor.extent.height = this->height;
     vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
     
-    vkCmdDraw(cmdBuffer, (uint32)(vertexData.size()/3), 1, 0, 0);
+    vkCmdDraw(cmdBuffer, (uint32)(vertexData.size()/3), 
+              1, 0, 0);
 
     //NOTE(): Ending the render pass changes the image's layout from
     //        COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR
@@ -1096,19 +1116,17 @@ void Demo::resize()
 
 void Demo::updateDataBuffer()
 {
-    glm::mat4 modelMatrix = glm::mat4(1.0f);
-    glm::mat4 rotMat = glm::rotate(modelMatrix,
-                                   glm::radians(4.0f),
-                                   glm::vec3(0.0f, 1.0f, 0.0f));
-
-    glm::mat4 mvp = camera.projMatrix * camera.viewMatrix * rotMat;
+    viewMatrix = camera.getViewMatrix();
+    glm::mat4 mvp = projMatrix * viewMatrix * modelMatrix;
  
     memcpy(vulkanManager.swapchain.imageResources[currBufferIndex].uniformMemoryPtr,
            (const void *)&mvp[0][0], sizeof(mvp));
 }
 
-void Demo::draw()
+void Demo::updateAndRender()
 {
+    if(!isPrepared) return;
+
     //Make sure that at most MAX_FRAMES rendering are happening at the same time.
     vkWaitForFences(vulkanManager.logicalDevice.device, 1, 
                     &vulkanManager.fences[frameIndex], VK_TRUE, UINT64_MAX);
@@ -1236,13 +1254,6 @@ void Demo::draw()
     }
 }
 
-void Demo::render()
-{
-    if(!isPrepared) return;
-    
-    draw();
-}
-
 //================== Texture =========================
 
 void Texture::load(std::string filepath)
@@ -1292,7 +1303,71 @@ void loadShaderModule(std::string &filename, std::vector<char> &buffer)
     shaderFile.close();
 }
 
-// ================================ Debug Callback =============================
+//====================== Input ============================
+
+void Demo::processKeyboardInput(uint64 *pressedKey)
+{
+    switch(*pressedKey)
+    {
+        case 0x57: //W key
+        {
+            //convert frame time to seconds, movementSpeed is expressed in units/sec
+            camera.moveForward(movementSpeed, lastFrameTime);
+        }break;
+
+        case 0x41: //A key
+        {
+            camera.moveLeft(movementSpeed, lastFrameTime);
+        }break;
+
+        case 0x53: //S key
+        {
+            camera.moveBackwards(movementSpeed, lastFrameTime);
+        }break;
+
+        case 0x44: //D key
+        {
+            camera.moveRight(movementSpeed, lastFrameTime);
+        }break;
+        
+        default:
+        {
+        }break; 
+    }
+}
+
+void Demo::confineMouseCursorToWindow()
+{
+    ClipCursor(&window.fullscreenCoords);
+}
+
+void Demo::centerMouseCursor()
+{
+    int32 screenCenterX = (int32)((window.fullscreenCoords.right + window.fullscreenCoords.left) / 2);
+    int32 screenCenterY = (int32)((window.fullscreenCoords.bottom + window.fullscreenCoords.top)/ 2);
+    SetCursorPos(screenCenterX, screenCenterY);
+}
+
+void Demo::processMouseInput(float xPos, float yPos)
+{
+    if(firstMouseInput)
+    {
+        mouseLastX = xPos;
+        mouseLastY = yPos;
+        firstMouseInput = false;
+    }
+    
+    float xOffset = xPos - mouseLastX;
+    float yOffset = mouseLastY - yPos; //y-coordinates are bottom-up 
+    
+    mouseLastX = xPos;
+    mouseLastY = yPos;
+
+    if(xOffset == 0.0f && yOffset == 0.0f) return;
+
+    camera.rotate(xOffset, yOffset, mouseSensitivity);
+    
+}
 
 //=================== Windows WndProc Callback ===========================
 LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
@@ -1305,7 +1380,7 @@ LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
         {
             DestroyWindow(this->handle);
             return 0;
-        } break;
+        } 
         
         case WM_DESTROY:
         {
@@ -1315,9 +1390,9 @@ LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
         
         case WM_PAINT:
         {
-            if(!demo->isInitialized) return 0;
-            demo->render();
-        } break; 
+            if(demo->isInitialized) demo->updateAndRender();
+            return 0;
+        } 
         
         case WM_GETMINMAXINFO:
         {
@@ -1344,24 +1419,40 @@ LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
                 demo->height = (lParam & 0xFFFF0000) >> 16; 
                 demo->resize();
             }
-        } break;
-        
-        case WM_KEYDOWN:
-        {
-            //TODO: handle input
+            
+            updateScreenCoordinates();
             
             return 0;
-        }break;
+        } 
+
+        case WM_KEYDOWN:
+        {
+            demo->processKeyboardInput(&wParam);
+            return 0;
+        }
+        
+        case WM_MOUSEMOVE:
+        {
+            //The low-order word of lParam contain the x coordinate of the mouse
+            //The high-order word of lParam specifies the y coordinate of the mouse 
+            float xPos = float(int(lParam & 0xFFFF));
+            float yPos = float(int((lParam & 0xFFFF0000) >> 16));
+
+            demo->processMouseInput(xPos, yPos);
+            
+            return 0;
+        }
 
         default:
-        {
-        } break;
+        {    
+        }break;
     }
     
     return DefWindowProcA(handle, uMsg, wParam, lParam);
 }
 
 // ======================= Main =====================
+
 
 int WINAPI WinMain(HINSTANCE hInstance, 
                    HINSTANCE hPrevInstance, 
@@ -1377,7 +1468,10 @@ int WINAPI WinMain(HINSTANCE hInstance,
     spdlog::register_logger(_logger);
 
     //-----------
-    
+
+    LARGE_INTEGER perfCounterFrequency{};
+    QueryPerformanceFrequency(&perfCounterFrequency);
+
     Demo demo;     
     demo.startUp();
     
@@ -1388,6 +1482,9 @@ int WINAPI WinMain(HINSTANCE hInstance,
     bool isRunning = true;
     while(isRunning)
     {
+        LARGE_INTEGER beginPerfCount{};
+        QueryPerformanceCounter(&beginPerfCount);
+
         if(demo.isPaused)
         {
             BOOL succ = WaitMessage();
@@ -1396,8 +1493,6 @@ int WINAPI WinMain(HINSTANCE hInstance,
                 LOGE_EXIT("WaitMessage() failed on paused demo.");
             }
         }
-        
-        demo.updateDataBuffer();
     
         PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE);
         if(msg.message == WM_QUIT)
@@ -1409,7 +1504,18 @@ int WINAPI WinMain(HINSTANCE hInstance,
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-        RedrawWindow(demo.window.handle, nullptr, nullptr, RDW_INTERNALPAINT);
+
+        demo.updateAndRender(); 
+
+        LARGE_INTEGER endPerfCount{};
+        QueryPerformanceCounter(&endPerfCount);
+
+        double elapsedTicks = (double)(endPerfCount.QuadPart - beginPerfCount.QuadPart);
+        double performanceDeltaSeconds = elapsedTicks /  
+                                   ((double)(perfCounterFrequency.QuadPart));
+        
+        //save frame time in seconds 
+        demo.lastFrameTime = (float)(performanceDeltaSeconds);
     }
 
     demo.shutDown();

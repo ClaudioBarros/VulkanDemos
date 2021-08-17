@@ -16,11 +16,37 @@ struct Win32Window
 
 	Demo *demo;	
 
-	uint16 width;
-	uint16 height;
+	int32 width;
+	int32 height;
+
+	int32 minX;
+	int32 minY;
+
+	RECT fullscreenCoords;
+
+	void updateScreenCoordinates()
+	{
+		//get the window coordinates in the form 
+		//{left = 0, top = 0, right = window_width, bottom = window_height}
+		RECT clientCoords = {}; 
+		GetClientRect(handle, &clientCoords);
+
+		width = clientCoords.right;		
+		height = clientCoords.bottom;
+
+		// Convert the client area to full screen coordinates.
+		POINT clientUpperLeft = {0, 0};
+		POINT clientBottomRight = {width, height};
 		
-	uint16 minX;
-	uint16 minY;
+		ClientToScreen(handle, &clientUpperLeft);
+		ClientToScreen(handle, &clientBottomRight);
+		
+		fullscreenCoords.left = clientUpperLeft.x;
+		fullscreenCoords.top = clientUpperLeft.y;
+		fullscreenCoords.right = clientBottomRight.x;
+		fullscreenCoords.bottom = clientBottomRight.y;
+		
+	}
 
 	static LRESULT CALLBACK StaticWndProc(HWND   hwnd,
 										  UINT   uMsg,

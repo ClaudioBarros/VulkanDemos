@@ -38,6 +38,10 @@ struct Demo
 	VulkanManager vulkanManager;
 	Camera camera;
 
+	glm::mat4 modelMatrix;
+	glm::mat4 viewMatrix;
+	glm::mat4 projMatrix;
+
 	std::vector<float> vertexData;
 	std::vector<float> uvData;
 
@@ -51,13 +55,22 @@ struct Demo
 	uint32 currBufferIndex = 0;
 	int frameIndex = 0;	
 
+	float lastFrameTime; //seconds
+
 	uint32 width;
 	uint32 height;
+	
+	float mouseLastX;
+	float mouseLastY;
+	float mouseSensitivity;
+	bool  firstMouseInput = true;
 
 	bool isInitialized;
 	bool isMinimized;	
 	bool isPaused;
 	bool isPrepared;
+	
+	float movementSpeed; //units per second
 
 	Demo(){}
 	~Demo(){}
@@ -65,6 +78,11 @@ struct Demo
 	void startUp();
 	void shutDown();
 	
+	void processKeyboardInput(uint64 *pressedKey);
+	void centerMouseCursor();
+	void confineMouseCursorToWindow();
+	void processMouseInput(float xPos, float yPos);
+
 	void prepare();
 	void initStagingTexture();
 	void initTextures();
@@ -80,8 +98,7 @@ struct Demo
 	void flushInitCmd();
 	void resize();
 	void updateDataBuffer();
-	void draw();	
-	void render();
+	void updateAndRender();	
 };
 
 
