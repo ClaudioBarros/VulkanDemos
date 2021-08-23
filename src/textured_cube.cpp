@@ -121,7 +121,6 @@ VkSurfaceFormatKHR pickSurfaceFormat(const VkSurfaceFormatKHR *surfaceFormats, u
     return surfaceFormats[0];
 }
 
-
 void Demo::startUp()
 {
     isInitialized = false;
@@ -140,14 +139,18 @@ void Demo::startUp()
     vulkanTextures.resize(1);
     textures[0].load(std::string("textures/wooden_crate.png"));
 
-    //--------- mouse ----------
+    //input
+    input.resetKeys();
+
+    // window 
+    window.init(this, L"Vulkan Demo - Textured Cube", this->width, this->height);
+    window.updateScreenCoordinates();
+
+    //mouse
     confineMouseCursorToWindow();
     centerMouseCursor();
     ShowCursor(FALSE);
-    mouseSensitivity = 0.6f;
-    //======== window ===========
-    window.init(this, L"Vulkan Demo - Textured Cube", this->width, this->height);
-    window.updateScreenCoordinates();
+    mouseSensitivity = 0.1f;
 
     //====== Vulkan configuration ===== 
     VulkanConfig vulkanConfig{};
@@ -193,7 +196,7 @@ void Demo::startUp()
     vulkanManager.isMinimized = &isMinimized;
     vulkanManager.startUp(&window, vulkanConfig, &this->width, &this->height);
     //======== camera ===========
-    movementSpeed = 20.0f;
+    movementSpeed = 5.0f;
     glm::vec3 cameraPos = glm::vec3(0.0f, 2.0f, 7.0f);
 
     float yaw = -90.0f;  
@@ -1305,34 +1308,23 @@ void loadShaderModule(std::string &filename, std::vector<char> &buffer)
 
 //====================== Input ============================
 
-void Demo::processKeyboardInput(uint64 *pressedKey)
+void Demo::processKeyboardInput()
 {
-    switch(*pressedKey)
+    if(input.dirUp)
     {
-        case 0x57: //W key
-        {
-            //convert frame time to seconds, movementSpeed is expressed in units/sec
-            camera.moveForward(movementSpeed, lastFrameTime);
-        }break;
-
-        case 0x41: //A key
-        {
-            camera.moveLeft(movementSpeed, lastFrameTime);
-        }break;
-
-        case 0x53: //S key
-        {
-            camera.moveBackwards(movementSpeed, lastFrameTime);
-        }break;
-
-        case 0x44: //D key
-        {
-            camera.moveRight(movementSpeed, lastFrameTime);
-        }break;
-        
-        default:
-        {
-        }break; 
+        camera.moveForward(movementSpeed, lastFrameTime);
+    }
+    if(input.dirDown)
+    {
+        camera.moveBackwards(movementSpeed, lastFrameTime);
+    }
+    if(input.dirLeft)
+    {
+        camera.moveLeft(movementSpeed, lastFrameTime);
+    }
+    if(input.dirRight)
+    {
+        camera.moveRight(movementSpeed, lastFrameTime);
     }
 }
 
@@ -1346,27 +1338,33 @@ void Demo::centerMouseCursor()
     int32 screenCenterX = (int32)((window.fullscreenCoords.right + window.fullscreenCoords.left) / 2);
     int32 screenCenterY = (int32)((window.fullscreenCoords.bottom + window.fullscreenCoords.top)/ 2);
     SetCursorPos(screenCenterX, screenCenterY);
+
+    POINT clientCenter; 
+    ScreenToClient(window.handle, &clientCenter);
+    ScreenToClient(window.handle, &clientCenter);
+    
+    input.mouseLastX = float(int(clientCenter.x));
+    input.mouseLastY = float(int(clientCenter.y));
 }
 
-void Demo::processMouseInput(float xPos, float yPos)
+void Demo::processMouseInput()
 {
     if(firstMouseInput)
     {
-        mouseLastX = xPos;
-        mouseLastY = yPos;
+        input.mouseLastX = input.mouseX;
+        input.mouseLastY = input.mouseY;
         firstMouseInput = false;
     }
     
-    float xOffset = xPos - mouseLastX;
-    float yOffset = mouseLastY - yPos; //y-coordinates are bottom-up 
+    float xOffset = input.mouseX - input.mouseLastX;
+    float yOffset = input.mouseLastY - input.mouseY; //y-coordinates are bottom-up 
     
-    mouseLastX = xPos;
-    mouseLastY = yPos;
+    input.mouseLastX = input.mouseX;
+    input.mouseLastY = input.mouseY;
 
     if(xOffset == 0.0f && yOffset == 0.0f) return;
 
     camera.rotate(xOffset, yOffset, mouseSensitivity);
-    
 }
 
 //=================== Windows WndProc Callback ===========================
@@ -1427,7 +1425,55 @@ LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
 
         case WM_KEYDOWN:
         {
-            demo->processKeyboardInput(&wParam);
+            switch(wParam)
+            {
+                case 0x57: //W key
+                {
+                    demo->input.dirUp = true;
+                }break;
+
+                case 0x41: //A key
+                {
+                    demo->input.dirLeft = true;
+                }break;
+
+                case 0x53: //S key
+                {
+                    demo->input.dirDown = true;
+                }break;
+
+                case 0x44: //D key 
+                {
+                    demo->input.dirRight = true;
+                }break;
+            }
+            return 0;
+        }
+        
+        case WM_KEYUP:
+        {
+            switch(wParam)
+            {
+                case 0x57: //W key
+                {
+                    demo->input.dirUp = false;
+                }break;
+
+                case 0x41: //A key
+                {
+                    demo->input.dirLeft = false;
+                }break;
+
+                case 0x53: //S key
+                {
+                    demo->input.dirDown = false;
+                }break;
+
+                case 0x44: //D key 
+                {
+                    demo->input.dirRight = false;
+                }break;
+            }
             return 0;
         }
         
@@ -1435,10 +1481,8 @@ LRESULT CALLBACK Win32Window::WndProc(UINT   uMsg,
         {
             //The low-order word of lParam contain the x coordinate of the mouse
             //The high-order word of lParam specifies the y coordinate of the mouse 
-            float xPos = float(int(lParam & 0xFFFF));
-            float yPos = float(int((lParam & 0xFFFF0000) >> 16));
-
-            demo->processMouseInput(xPos, yPos);
+            demo->input.mouseX = float(int(lParam & 0xFFFF));
+            demo->input.mouseY = float(int((lParam & 0xFFFF0000) >> 16));
             
             return 0;
         }
@@ -1505,6 +1549,13 @@ int WINAPI WinMain(HINSTANCE hInstance,
             DispatchMessage(&msg);
         }
 
+        demo.processKeyboardInput();
+        demo.processMouseInput();
+        float windowCenterY = (float)(demo.window.height/2);
+        float windowCenterX = (float)(demo.window.width/2);
+        demo.centerMouseCursor(); 
+        demo.input.mouseLastY = windowCenterY;
+        demo.input.mouseLastX = windowCenterX;
         demo.updateAndRender(); 
 
         LARGE_INTEGER endPerfCount{};

@@ -5,6 +5,7 @@
 #include <platform.h> 
 #include <vulkan_manager.h>
 #include <camera.h>
+#include <input.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -37,6 +38,7 @@ struct Demo
 	Win32Window window;
 	VulkanManager vulkanManager;
 	Camera camera;
+	Input input;
 
 	glm::mat4 modelMatrix;
 	glm::mat4 viewMatrix;
@@ -60,8 +62,6 @@ struct Demo
 	uint32 width;
 	uint32 height;
 	
-	float mouseLastX;
-	float mouseLastY;
 	float mouseSensitivity;
 	bool  firstMouseInput = true;
 
@@ -78,10 +78,10 @@ struct Demo
 	void startUp();
 	void shutDown();
 	
-	void processKeyboardInput(uint64 *pressedKey);
+	void processKeyboardInput();
 	void centerMouseCursor();
 	void confineMouseCursorToWindow();
-	void processMouseInput(float xPos, float yPos);
+	void processMouseInput();
 
 	void prepare();
 	void initStagingTexture();

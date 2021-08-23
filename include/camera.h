@@ -55,7 +55,9 @@ struct Camera
 		xOffset = xOffset * sensitivity;
 		yOffset = yOffset * sensitivity;
 		
-		yaw += xOffset;
+		//constrain yaw to [0, 360] degree range to avoid 
+		//floating point imprecision at high values 
+		yaw = glm::mod(yaw + xOffset, 360.0f); 		
 		pitch += yOffset;
 		
 		if(pitch >  89.0f) pitch =  89.0f;
