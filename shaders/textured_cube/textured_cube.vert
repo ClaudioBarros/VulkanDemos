@@ -15,6 +15,7 @@ layout(location = 1) out vec3 fragPos;
 void main()
 {
     texCoord = ubo.attr[gl_VertexIndex];
+    transpose(ubo.mvp);
     gl_Position = ubo.mvp * ubo.position[gl_VertexIndex];
     fragPos = gl_Position.xyz;
 }

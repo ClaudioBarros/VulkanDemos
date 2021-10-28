@@ -2,6 +2,7 @@
 #define TYPEDEFS_AND_MACROS_H
 
 #include <stdint.h>
+#include <math.h>
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/msvc_sink.h>

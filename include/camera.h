@@ -1,33 +1,32 @@
-#ifndef CAMERA_H
-#define CAMERA_H
+#pragma once
 
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
+#include "vectors.h"
+#include "matrix.h"
 
 struct Camera
 {
-	glm::vec3 pos;
-	glm::vec3 fwd;
-	glm::vec3 right;
-	glm::vec3 up;
-	glm::vec3 worldUp;
+	vec3 pos;
+	vec3 fwd;
+	vec3 right;
+	vec3 up;
+	vec3 worldUp = vec3(0.0f, 1.0f, 0.0f);
 
 	float yaw;
 	float pitch;
 
-	void init(glm::vec3 position, float yawAngle,  float pitchAngle) 
+	void init(vec3 position, float yawAngle,  float pitchAngle) 
 	{
 		pos = position;
-		worldUp = glm::vec3(0, 1, 0);
-		up = glm::vec3(0, 1, 0);
+		worldUp = vec3i(0, 1, 0);
+		up = vec3i(0, 1, 0);
 		yaw = yawAngle;
 		pitch = pitchAngle;
 		updateVectors();
 	}
-	
-	glm::mat4 getViewMatrix()
+
+	mat4 getViewMatrix()
 	{
-		return glm::lookAt(pos, (pos + fwd), up);
+		return lookAt(pos, (pos + fwd), up);
 	}
 	
 	void moveForward(float speed, float deltaTime)
@@ -57,7 +56,7 @@ struct Camera
 		
 		//constrain yaw to [0, 360] degree range to avoid 
 		//floating point imprecision at high values 
-		yaw = glm::mod(yaw + xOffset, 360.0f); 		
+		yaw = fmod(yaw + xOffset, 360.0f); 		
 		pitch += yOffset;
 		
 		if(pitch >  89.0f) pitch =  89.0f;
@@ -68,15 +67,13 @@ struct Camera
 
 	void updateVectors()
 	{
-		glm::vec3 forward;
-		forward.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-		forward.y = sin(glm::radians(pitch));
-		forward.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-		fwd = glm::normalize(forward);
-		
-		right = glm::normalize(glm::cross(fwd, worldUp));
-		up = glm::normalize(glm::cross(right, fwd));
+		vec3 forward;
+		forward = vec3(cos(DEG2RAD(yaw)) * cos(DEG2RAD(pitch)),  //x
+		               sin(DEG2RAD(pitch)),                       //y
+		               sin(DEG2RAD(yaw)) * cos(DEG2RAD(pitch))); //z
+		fwd = normalize(forward);
+
+		right = normalize(cross(fwd, worldUp));
+		up = normalize(cross(right, fwd));
 	}	
 };
-
-#endif

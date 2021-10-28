@@ -1,6 +1,9 @@
 #include "textured_cube.h"
 #include "fstream"
 
+#include "matrix.h"
+
+
 const std::vector<float> vertices = 
 {
     -1.0f,-1.0f,-1.0f,  // -X side
@@ -99,7 +102,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityF
     std::string output("\n[VULKAN] ");
     output.append(pCallbackData->pMessage);
     LOGI(output);
-    
+
     return VK_FALSE;
 }
 
@@ -140,17 +143,19 @@ void Demo::startUp()
     textures[0].load(std::string("textures/wooden_crate.png"));
 
     //input
-    input.resetKeys();
+    input = {};
+    input.maxRadius = (this->height/2.0f);
+    input.minRadius = -input.maxRadius;
 
     // window 
-    window.init(this, L"Vulkan Demo - Textured Cube", this->width, this->height);
+    window.init(this, L"Vulkan Demo - Textured Cube", (uint16)this->width, (uint16)this->height);
     window.updateScreenCoordinates();
 
     //mouse
     confineMouseCursorToWindow();
     centerMouseCursor();
-    ShowCursor(FALSE);
-    mouseSensitivity = 0.1f;
+    //ShowCursor(FALSE);
+    mouseSensitivity = 2.0f;
 
     //====== Vulkan configuration ===== 
     VulkanConfig vulkanConfig{};
@@ -162,21 +167,21 @@ void Demo::startUp()
 
     //--- extensions ---
     vulkanConfig.instanceExtensions = {
-    "VK_KHR_device_group_creation",
-	"VK_KHR_display",
-	"VK_KHR_external_fence_capabilities",
-	"VK_KHR_external_memory_capabilities",
-	"VK_KHR_external_semaphore_capabilities",
-	"VK_KHR_get_display_properties2",
-	"VK_KHR_get_physical_device_properties2",
-	"VK_KHR_get_surface_capabilities2",
-	"VK_KHR_surface",
-	"VK_KHR_surface_protected_capabilities",
-	"VK_KHR_win32_surface",
-	"VK_EXT_debug_report",
-	"VK_EXT_debug_utils",
-    "VK_EXT_swapchain_colorspace",
-	"VK_NV_external_memory_capabilities",
+        "VK_KHR_device_group_creation",
+        "VK_KHR_display",
+        "VK_KHR_external_fence_capabilities",
+        "VK_KHR_external_memory_capabilities",
+        "VK_KHR_external_semaphore_capabilities",
+        "VK_KHR_get_display_properties2",
+        "VK_KHR_get_physical_device_properties2",
+        "VK_KHR_get_surface_capabilities2",
+        "VK_KHR_surface",
+        "VK_KHR_surface_protected_capabilities",
+        "VK_KHR_win32_surface",
+        "VK_EXT_debug_report",
+        "VK_EXT_debug_utils",
+        "VK_EXT_swapchain_colorspace",
+        "VK_NV_external_memory_capabilities",
     };
     
     vulkanConfig.deviceExtensions = {"VK_KHR_swapchain"};
@@ -185,7 +190,7 @@ void Demo::startUp()
     vulkanConfig.physDeviceFeaturesToEnable.samplerAnisotropy = VK_TRUE;
 
     //--- formats ---
-    vulkanConfig.preferredDepthFormat = VK_FORMAT_D16_UNORM;
+    vulkanConfig.preferredDepthFormat = VK_FORMAT_D32_SFLOAT;
     vulkanConfig.preferredPresentMode = VK_PRESENT_MODE_FIFO_KHR;
     vulkanConfig.preferredSurfaceFormat.format = VK_FORMAT_B8G8R8A8_UNORM;
     vulkanConfig.preferredSurfaceFormat.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
@@ -197,23 +202,22 @@ void Demo::startUp()
     vulkanManager.startUp(&window, vulkanConfig, &this->width, &this->height);
     //======== camera ===========
     movementSpeed = 5.0f;
-    glm::vec3 cameraPos = glm::vec3(0.0f, 2.0f, 7.0f);
+    vec3 cameraPos = vec3(0.0f, 4.0f, 5.0f);
 
     float yaw = -90.0f;  
     float pitch = 0.0f;
     camera.init(cameraPos, yaw, pitch);
     
-    float yFov = glm::radians(45.0f);
+    float yFov = 45.0f;
     float aspect = (float)(this->width) / (float)(this->height); 
     float n = 0.1f;
     float f = 100.0f;
 
-    modelMatrix = glm::mat4(1.0f);
+    modelMatrix = mat4(1.0f);
     
     viewMatrix = camera.getViewMatrix();
-
-    projMatrix = glm::perspective(yFov, aspect, n, f),
-    projMatrix[1][1] *= -1;
+    
+    projMatrix = vulkanPerspective(aspect, yFov, n, f),
 
     isInitialized = true;
 }
@@ -481,9 +485,8 @@ void Demo::initCubeDataBuffers()
 {
     VS_UBO data{};
 
-    glm::mat4 modelMatrix = glm::mat4(1.0f);
     viewMatrix = camera.getViewMatrix();
-    data.mvp = projMatrix * viewMatrix * modelMatrix;
+    data.mvp = modelMatrix * viewMatrix * projMatrix;
 
     //vulkan expects the y coord to be flipped
     //data.mvp[1][1] *= -1;
@@ -491,15 +494,15 @@ void Demo::initCubeDataBuffers()
     for(size_t i = 0; i < (12 * 3); i++)
     {
         assert((i * 3 + 2) < vertexData.size());
-        data.pos[i] = glm::vec4(vertexData[i * 3],
-                                vertexData[i * 3 + 1],
-                                vertexData[i * 3 + 2],
-                                1.0f);
+        data.pos[i] = vec4(vertexData[i * 3],
+                           vertexData[i * 3 + 1],
+                           vertexData[i * 3 + 2],
+                           1.0f);
 
-        data.attr[i] = glm::vec4(texCoords[i * 2],
-                                 texCoords[i * 2 + 1],
-                                 0.0f,
-                                 0.0f);
+        data.attr[i] = vec4(texCoords[i * 2],
+                            texCoords[i * 2 + 1],
+                            0.0f,
+                            0.0f);
     }
 
     for(size_t i = 0; i < vulkanManager.swapchain.imageResources.size(); i++) 
@@ -712,7 +715,7 @@ void Demo::initPipeline()
     depthInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthInfo.depthTestEnable = VK_TRUE;
     depthInfo.depthWriteEnable = VK_TRUE;
-    depthInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthInfo.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL ;
     depthInfo.depthBoundsTestEnable = VK_FALSE;
     depthInfo.minDepthBounds = 0.0f;
     depthInfo.maxDepthBounds = 1.0f;
@@ -960,7 +963,7 @@ void Demo::recordDrawCommands(VkCommandBuffer cmdBuffer)
 
     VkClearValue clearValues[2] = {};
     clearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
-    clearValues[1].depthStencil = {1.0f, 0};
+    clearValues[1].depthStencil = {0.0f, 0};
 
     VkRenderPassBeginInfo rpBeginInfo{};
     rpBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1120,10 +1123,10 @@ void Demo::resize()
 void Demo::updateDataBuffer()
 {
     viewMatrix = camera.getViewMatrix();
-    glm::mat4 mvp = projMatrix * viewMatrix * modelMatrix;
- 
+    mat4 mvp = modelMatrix * viewMatrix * projMatrix;
+
     memcpy(vulkanManager.swapchain.imageResources[currBufferIndex].uniformMemoryPtr,
-           (const void *)&mvp[0][0], sizeof(mvp));
+           (const void *)&mvp, sizeof(mvp));
 }
 
 void Demo::updateAndRender()
@@ -1349,20 +1352,29 @@ void Demo::centerMouseCursor()
 
 void Demo::processMouseInput()
 {
-    if(firstMouseInput)
-    {
-        input.mouseLastX = input.mouseX;
-        input.mouseLastY = input.mouseY;
-        firstMouseInput = false;
-    }
-    
     float xOffset = input.mouseX - input.mouseLastX;
     float yOffset = input.mouseLastY - input.mouseY; //y-coordinates are bottom-up 
     
+    if(xOffset > input.maxRadius) xOffset = input.maxRadius;
+    if(xOffset < input.minRadius) xOffset = input.minRadius;
+
+    if(yOffset > input.maxRadius) yOffset = input.maxRadius;
+    if(yOffset < input.minRadius) yOffset = input.minRadius;
+    
     input.mouseLastX = input.mouseX;
     input.mouseLastY = input.mouseY;
+    
+    //normalize from [minRadius, maxRadius] to [-1, 1]
+    //according to the formula for rescaling to the range [a, b] : 
+    //newX = a + ((x - minX)(b-a)/(maxX - minX))
+	xOffset = -1 + (((xOffset - input.minRadius)*(2))/(input.maxRadius - input.minRadius));
+	yOffset = -1 + (((yOffset - input.minRadius)*(2))/(input.maxRadius - input.minRadius));
+
+    assert(xOffset <= 1.0f && xOffset >= -1.0f);
+    assert(yOffset <= 1.0f && yOffset >= -1.0f);
 
     if(xOffset == 0.0f && yOffset == 0.0f) return;
+
 
     camera.rotate(xOffset, yOffset, mouseSensitivity);
 }

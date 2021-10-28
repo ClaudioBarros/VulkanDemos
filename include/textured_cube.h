@@ -1,5 +1,4 @@
-#ifndef TEXTURED_CUBE_H
-#define TEXTURED_CUBE_H
+#pragma once
 
 #include <vector>
 #include <platform.h> 
@@ -10,7 +9,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#include <glm/glm.hpp>
+#include "matrix.h"
 
 struct Texture
 {
@@ -26,9 +25,9 @@ struct Texture
 
 struct VS_UBO 
 {
-	alignas(16) glm::mat4 mvp;
-	alignas(16) glm::vec4 pos[12 * 3];
-	alignas(16) glm::vec4 attr[12 * 3];
+	alignas(16) mat4 mvp;
+	alignas(16) vec4 pos[12 * 3];
+	alignas(16) vec4 attr[12 * 3];
 };
 
 void loadShaderModule(std::string &filename, std::vector<char> &buffer);
@@ -38,11 +37,11 @@ struct Demo
 	Win32Window window;
 	VulkanManager vulkanManager;
 	Camera camera;
-	Input input;
+	FPSInput input;
 
-	glm::mat4 modelMatrix;
-	glm::mat4 viewMatrix;
-	glm::mat4 projMatrix;
+	mat4 modelMatrix;
+	mat4 viewMatrix;
+	mat4 projMatrix;
 
 	std::vector<float> vertexData;
 	std::vector<float> uvData;
@@ -100,6 +99,3 @@ struct Demo
 	void updateDataBuffer();
 	void updateAndRender();	
 };
-
-
-#endif 

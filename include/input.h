@@ -1,37 +1,21 @@
-#ifndef INPUT_H
-#define INPUT_H
+#pragma once
 
-struct Input 
+struct FPSInput 
 {
+	float deadzone;
+	float minRadius;
+	float maxRadius;
+
 	float mouseX;
 	float mouseY;
 	float mouseLastX;
 	float mouseLastY;
-
+	
+	float xOffset;
+	float yOffset;
+	
 	bool dirUp;
 	bool dirDown;
 	bool dirLeft;
 	bool dirRight;	
-	
-	void resetKeys()
-	{
-		dirUp = false;
-		dirDown = false;
-		dirLeft = false;
-		dirRight = false;
-	}
-	
-	void resetMouseCurrPos()
-	{
-		mouseX = 0.0f;
-		mouseY = 0.0f;
-	}
-	
-	void resetMouseLastPos()
-	{
-		mouseLastX = 0.0f;
-		mouseLastY = 0.0f;
-	}
 };
-
-#endif

@@ -1,5 +1,4 @@
-#ifndef VULKAN_MANAGER_H
-#define VULKAN_MANAGER_H
+#pragma once 
 
 #define VK_USE_PLATFORM_WIN32_KHR 
 
@@ -247,5 +246,3 @@ struct VulkanManager
 	
 	void freeVulkanTexture(VulkanTexture &tex);
 };
-
-#endif
